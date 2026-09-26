@@ -40,10 +40,9 @@ const DEFAULT_SETTINGS = {
   dailySummaryReport: true
 };
 
-<<<<<<< Updated upstream
 // Unique ID generator that doesn't depend on array length (avoids collision on delete)
 const makeId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-=======
+
 // Helper: compute product stock status from single source of truth
 export const calculateStockStatus = (totalStock, minReorderPoint) => {
   const stock = Number(totalStock ?? 0);
@@ -53,7 +52,6 @@ export const calculateStockStatus = (totalStock, minReorderPoint) => {
   if (stock <= reorder) return 'Low Stock';
   return 'In Stock';
 };
->>>>>>> Stashed changes
 
 export const InventoryProvider = ({ children }) => {
   const toast = useToast();
@@ -134,19 +132,7 @@ export const InventoryProvider = ({ children }) => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities)); }, [activities]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)); }, [settings]);
 
-<<<<<<< Updated upstream
-  // Helper: compute product stock status
-  const calculateStockStatus = (totalStock, minReorderPoint) => {
-    if (totalStock <= 0) return 'Out of Stock';
-    if (totalStock < Math.min(10, minReorderPoint / 2)) return 'Critical';
-    if (totalStock <= minReorderPoint) return 'Low Stock';
-    return 'In Stock';
-  };
-
-  // Helper: get warehouse name by code
-=======
   // Helper: get warehouse name by code or ID
->>>>>>> Stashed changes
   const getWarehouseName = (warehouseId) => {
     // Use a functional lookup to always get the latest warehouses (avoid stale closure)
     const found = warehouses.find(w => w.id === warehouseId || w.code === warehouseId);
@@ -1008,32 +994,7 @@ export const InventoryProvider = ({ children }) => {
     const fromWhName = getWarehouseName(fromWhId);
     const toWhName = getWarehouseName(toWhId);
 
-<<<<<<< Updated upstream
-    // Update product stock distribution across warehouses (total stays the same)
-    if (prod) {
-      setProducts(prev => prev.map(p => {
-        if (p.id === prod.id) {
-          const currentFromStock = Number(p.stockByWarehouse?.[fromWhId] || 0);
-          const currentToStock = Number(p.stockByWarehouse?.[toWhId] || 0);
 
-          const newStockByWarehouse = {
-            ...p.stockByWarehouse,
-            [fromWhId]: Math.max(0, currentFromStock - qty),
-            [toWhId]: currentToStock + qty
-          };
-          // Total stock remains the same!
-          return {
-            ...p,
-            stockByWarehouse: newStockByWarehouse,
-            lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
-          };
-        }
-        return p;
-      }));
-    }
-
-=======
->>>>>>> Stashed changes
     const newTransfer = {
       id: newId,
       transferNumber: newId,
@@ -1139,11 +1100,7 @@ export const InventoryProvider = ({ children }) => {
 
     // 3. Ledger entry
     const newLedgerEntry = {
-<<<<<<< Updated upstream
-      id: `LED-${Date.now().toString().slice(-6)}`,
-=======
-      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
->>>>>>> Stashed changes
+      id: makeId('LED'),
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       productName: transfer.productName,
       sku: transfer.sku,
@@ -1159,16 +1116,9 @@ export const InventoryProvider = ({ children }) => {
     };
     setLedger(prev => [newLedgerEntry, ...prev]);
 
-<<<<<<< Updated upstream
-    // Activity Entry
-    addActivity({
-      productName: newTransfer.productName,
-=======
     // 4. Activity entry
-    const newActivity = {
-      id: `ACT-${Date.now().toString().slice(-4)}`,
+    addActivity({
       productName: transfer.productName,
->>>>>>> Stashed changes
       operation: 'Transferred',
       type: 'transfer',
       quantity: `${qty} ${transfer.unit}`,
@@ -1298,12 +1248,6 @@ export const InventoryProvider = ({ children }) => {
     return newAdjustment;
   };
 
-<<<<<<< Updated upstream
-  // -------------------------------------------------------------
-  // WAREHOUSE MANAGEMENT
-  // -------------------------------------------------------------
-
-=======
   // 6b. APPROVE PENDING ADJUSTMENT -> applies stock for 'Pending Approval' records
   const approveAdjustment = (adjustmentId) => {
     const adjustment = adjustments.find(a => a.id === adjustmentId);
@@ -1353,7 +1297,7 @@ export const InventoryProvider = ({ children }) => {
 
     // Ledger entry
     const newLedgerEntry = {
-      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+      id: makeId('LED'),
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       productName: adjustment.productName,
       sku: adjustment.sku,
@@ -1370,19 +1314,14 @@ export const InventoryProvider = ({ children }) => {
     setLedger(prev => [newLedgerEntry, ...prev]);
 
     // Activity entry
-    const newActivity = {
-      id: `ACT-${Date.now().toString().slice(-4)}`,
+    addActivity({
       productName: adjustment.productName,
       operation: 'Adjusted',
       type: 'adjustment',
       quantity: `${difference > 0 ? '+' : ''}${difference} ${adjustment.unit}`,
       location: whName,
-      timestamp: 'Just now',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      user: 'Anish',
       status: difference >= 0 ? 'success' : 'neutral'
-    };
-    setActivities(prev => [newActivity, ...prev]);
+    });
 
     toast.success(
       '✓ Adjustment Approved & Applied',
@@ -1391,7 +1330,6 @@ export const InventoryProvider = ({ children }) => {
   };
 
   // 7. WAREHOUSE MANAGEMENT
->>>>>>> Stashed changes
   const addWarehouse = (whData) => {
     const newId = `WH-${(whData.code || 'LOC').toUpperCase()}`;
     const newWarehouse = {
@@ -1467,17 +1405,10 @@ export const InventoryProvider = ({ children }) => {
     totalProducts: products.length,                                                          // ALL products in catalog
     totalProductsInStock: products.reduce((acc, p) => acc + (p.totalStock > 0 ? 1 : 0), 0), // products WITH stock
     totalUnitsInStock: products.reduce((acc, p) => acc + Number(p.totalStock || 0), 0),
-<<<<<<< Updated upstream
-    lowStockCount: products.filter(p => p.status === 'Low Stock' || p.status === 'Critical').length,
-    outOfStockCount: products.filter(p => p.status === 'Out of Stock' || p.totalStock <= 0).length,
-    pendingReceiptsCount: receipts.filter(r => r.status === 'Waiting' || r.status === 'Ready' || r.status === 'Draft').length,
-    pendingDeliveriesCount: deliveries.filter(d => d.status === 'Picking' || d.status === 'Packing' || d.status === 'Draft').length,
-=======
     lowStockCount: products.filter(p => Number(p.totalStock) > 0 && Number(p.totalStock) <= Number(p.minReorderPoint)).length,
     outOfStockCount: products.filter(p => Number(p.totalStock) <= 0).length,
     pendingReceiptsCount: receipts.filter(r => ['Draft', 'Waiting', 'Ready'].includes(r.status)).length,
     pendingDeliveriesCount: deliveries.filter(d => ['Draft', 'Picking', 'Packing', 'Ready'].includes(d.status)).length,
->>>>>>> Stashed changes
     internalTransfersCount: transfers.length,
     unreadAlertsCount: alerts.filter(a => !a.isRead).length,
     activeWarehousesCount: warehouses.filter(w => w.status === 'Active').length
@@ -1501,13 +1432,9 @@ export const InventoryProvider = ({ children }) => {
         activities,
         settings,
         kpiMetrics,
-<<<<<<< Updated upstream
+        calculateStockStatus,
 
         // Product CRUD
-=======
-        calculateStockStatus,
-        // Methods
->>>>>>> Stashed changes
         addProduct,
         importProductsBatch,
         updateProduct,
@@ -1530,12 +1457,9 @@ export const InventoryProvider = ({ children }) => {
         validateTransfer,
         cancelTransfer,
         applyAdjustment,
-<<<<<<< Updated upstream
+        approveAdjustment,
 
         // Warehouse
-=======
-        approveAdjustment,
->>>>>>> Stashed changes
         addWarehouse,
 
         // Alerts
