@@ -10,7 +10,8 @@ export const Modal = ({
   children,
   footer,
   maxWidth = 'max-w-2xl',
-  showClose = true
+  showClose = true,
+  zIndex = 'z-50'
 }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -33,7 +34,7 @@ export const Modal = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+        <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 sm:p-6 overflow-y-auto`}>
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}

@@ -55,7 +55,9 @@ export function App() {
                   <Route index element={<OverviewPage />} />
                   <Route path="products" element={<ProductsPage />} />
                   <Route path="receipts" element={<ReceiptsPage />} />
+                  <Route path="dashboard/receipts" element={<Navigate to="/receipts" replace />} />
                   <Route path="deliveries" element={<DeliveriesPage />} />
+                  <Route path="dashboard/deliveries" element={<Navigate to="/deliveries" replace />} />
                   <Route path="transfers" element={<InternalTransfersPage />} />
                   <Route path="adjustments" element={<AdjustmentsPage />} />
                   <Route path="ledger" element={<MoveHistoryPage />} />

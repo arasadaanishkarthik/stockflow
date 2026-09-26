@@ -123,10 +123,21 @@ export const InventoryProvider = ({ children }) => {
     return 'In Stock';
   };
 
-  // Helper: get warehouse name by code
+  // Helper: get warehouse name by code or ID
   const getWarehouseName = (warehouseId) => {
-    const found = warehouses.find(w => w.id === warehouseId || w.code === warehouseId);
+    const found = warehouses.find(w => w.id === warehouseId || w.code === warehouseId || w.name === warehouseId);
     return found ? found.name : warehouseId;
+  };
+
+  // Helper: resolve warehouse code / ID safely
+  const resolveWarehouseId = (whIdentifier) => {
+    if (!whIdentifier) return 'WH-MAIN';
+    const found = warehouses.find(w => 
+      w.id?.toLowerCase() === whIdentifier.toLowerCase() || 
+      w.code?.toLowerCase() === whIdentifier.toLowerCase() || 
+      w.name?.toLowerCase() === whIdentifier.toLowerCase()
+    );
+    return found ? (found.id || found.code) : whIdentifier;
   };
 
   // -------------------------------------------------------------
@@ -225,20 +236,74 @@ export const InventoryProvider = ({ children }) => {
 
   // 1. ADD RECEIPT
   const addReceipt = (receiptData) => {
-    const newId = `REC-${1040 + receipts.length + 1}`;
-    const totalAmount = (receiptData.items || []).reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.unitCost || 0)), 0);
+    // Validation
+    if (!receiptData.supplier || !receiptData.supplier.trim()) {
+      toast.error('Validation Error', 'Supplier name is required.');
+      return null;
+    }
+
+    if (!receiptData.warehouseId) {
+      toast.error('Validation Error', 'Destination warehouse must be selected.');
+      return null;
+    }
+
+    if (!receiptData.items || !Array.isArray(receiptData.items) || receiptData.items.length === 0) {
+      toast.error('Validation Error', 'Receipt must contain at least one product item.');
+      return null;
+    }
+
+    for (const item of receiptData.items) {
+      if (!item.productId) {
+        toast.error('Validation Error', 'A product must be selected for all line items.');
+        return null;
+      }
+      if (!item.qty || Number(item.qty) <= 0 || isNaN(Number(item.qty))) {
+        toast.error('Validation Error', `Quantity for "${item.productName || 'product'}" must be greater than 0.`);
+        return null;
+      }
+    }
+
+    // Auto-generate safe sequential receipt ID avoiding collisions
+    let nextNum = 1045;
+    receipts.forEach(r => {
+      const match = (r.receiptNumber || r.id || '').match(/\d+/);
+      if (match) {
+        const val = parseInt(match[0], 10);
+        if (val >= nextNum) nextNum = val;
+      }
+    });
+    const generatedNumber = `REC-${nextNum + 1}`;
+    const newId = receiptData.receiptNumber && receiptData.receiptNumber.trim() ? receiptData.receiptNumber.trim() : generatedNumber;
+
+    // Check for duplicate receipt number
+    if (receipts.some(r => r.receiptNumber?.toLowerCase() === newId.toLowerCase())) {
+      toast.error('Validation Error', `Receipt #${newId} already exists. Please use a unique receipt number.`);
+      return null;
+    }
+
+    const totalAmount = receiptData.items.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.unitCost || 0)), 0);
+
+    // Initial status must be one of Draft, Ready, Waiting (never initial Done to prevent premature stock increase)
+    const initialStatus = ['Draft', 'Ready', 'Waiting'].includes(receiptData.status) ? receiptData.status : 'Waiting';
 
     const newReceipt = {
       id: newId,
       receiptNumber: newId,
-      supplier: receiptData.supplier || 'Apex Metallurgy Corp',
-      supplierEmail: receiptData.supplierEmail || 'vendor@supply.com',
-      warehouseId: receiptData.warehouseId || 'WH-MAIN',
-      warehouseName: getWarehouseName(receiptData.warehouseId || 'WH-MAIN'),
-      date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      supplier: receiptData.supplier.trim(),
+      supplierEmail: receiptData.supplierEmail || `${receiptData.supplier.toLowerCase().replace(/[^a-z0-9]/g, '')}@vendor.com`,
+      warehouseId: receiptData.warehouseId,
+      warehouseName: getWarehouseName(receiptData.warehouseId),
+      date: receiptData.date || new Date().toISOString().slice(0, 16).replace('T', ' '),
       expectedDate: receiptData.expectedDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-      status: receiptData.status || 'Draft',
-      items: receiptData.items || [],
+      status: initialStatus,
+      items: receiptData.items.map(item => ({
+        productId: item.productId,
+        productName: item.productName || 'Inventory Product',
+        sku: item.sku || 'SKU-000',
+        qty: Number(item.qty),
+        unit: item.unit || 'units',
+        unitCost: Number(item.unitCost || 0)
+      })),
       totalAmount: totalAmount,
       notes: receiptData.notes || 'Inbound supplier replenishment purchase order.',
       receivedBy: receiptData.receivedBy || 'Anish (Procurement)'
@@ -246,39 +311,81 @@ export const InventoryProvider = ({ children }) => {
 
     setReceipts(prev => [newReceipt, ...prev]);
 
-    toast.success('Receipt Created', `Receipt #${newReceipt.receiptNumber} generated.`);
+    toast.success('Receipt Created', `Receipt #${newReceipt.receiptNumber} successfully created in ${newReceipt.status} status.`);
     return newReceipt;
   };
 
   // 2. VALIDATE RECEIPT -> Increases Stock & Adds Ledger Entry
   const validateReceipt = (receiptId) => {
-    const receipt = receipts.find(r => r.id === receiptId);
-    if (!receipt) return;
-    if (receipt.status === 'Done') {
-      toast.warning('Already Validated', `Receipt #${receipt.receiptNumber} has already been marked as Done.`);
-      return;
+    const receipt = receipts.find(r => r.id === receiptId || r.receiptNumber === receiptId);
+    if (!receipt) {
+      toast.error('Receipt Not Found', 'Could not locate the requested goods receipt.');
+      return false;
     }
 
-    const whId = receipt.warehouseId;
-    const whName = receipt.warehouseName;
+    // DUPLICATE VALIDATION GUARD: A receipt that is already Done must never increase stock again.
+    if (receipt.status === 'Done') {
+      toast.warning('Already Validated', `Receipt #${receipt.receiptNumber} has already been marked as Done. Stock was not modified.`);
+      return false;
+    }
+
+    if (receipt.status === 'Canceled') {
+      toast.error('Validation Denied', `Receipt #${receipt.receiptNumber} is canceled and cannot be validated.`);
+      return false;
+    }
+
+    if (!receipt.items || receipt.items.length === 0) {
+      toast.error('Validation Error', 'Receipt contains no items to receive.');
+      return false;
+    }
+
+    const hasInvalidQty = receipt.items.some(i => !i.qty || Number(i.qty) <= 0);
+    if (hasInvalidQty) {
+      toast.error('Validation Error', 'All items in the receipt must have a positive quantity (> 0).');
+      return false;
+    }
+
+    if (!receipt.warehouseId) {
+      toast.error('Validation Error', 'Destination warehouse is missing from receipt.');
+      return false;
+    }
+
+    const whId = resolveWarehouseId(receipt.warehouseId);
+    const whName = receipt.warehouseName || getWarehouseName(whId);
 
     // 1. Update Product Stocks
-    setProducts(prev => prev.map(prod => {
-      const matchingItem = receipt.items.find(i => i.productId === prod.id || i.sku === prod.sku);
-      if (matchingItem) {
-        const addedQty = Number(matchingItem.qty);
-        const currentWhStock = Number(prod.stockByWarehouse?.[whId] || 0);
-        const newWhStock = currentWhStock + addedQty;
-        const newStockByWarehouse = {
-          ...prod.stockByWarehouse,
-          [whId]: newWhStock
-        };
-        const newTotalStock = Object.values(newStockByWarehouse).reduce((a, b) => Number(a) + Number(b), 0);
+    // EXACT INVENTORY RULE:
+    // newStock = existingStock + receiptQuantity
+    // For warehouse stock:
+    // newWarehouseStock = existingWarehouseStock + receiptQuantity
+    setProducts(prevProducts => prevProducts.map(prod => {
+      const matchingItems = (receipt.items || []).filter(i => 
+        (i.productId && prod.id && String(i.productId).toLowerCase() === String(prod.id).toLowerCase()) ||
+        (i.sku && prod.sku && String(i.sku).toLowerCase() === String(prod.sku).toLowerCase()) ||
+        (i.productName && prod.name && String(i.productName).trim().toLowerCase() === String(prod.name).trim().toLowerCase()) ||
+        (i.name && prod.name && String(i.name).trim().toLowerCase() === String(prod.name).trim().toLowerCase())
+      );
+
+      if (matchingItems.length > 0) {
+        const addedQty = matchingItems.reduce((sum, i) => sum + Number(i.qty || 0), 0);
+        
+        // Explicit: newStock = existingStock + receiptQuantity
+        const existingStock = Number(prod.totalStock !== undefined ? prod.totalStock : 0);
+        const newTotalStock = existingStock + addedQty;
+
+        // Explicit: newWarehouseStock = existingWarehouseStock + receiptQuantity
+        const currentStockByWh = prod.stockByWarehouse ? { ...prod.stockByWarehouse } : {};
+        const whKey = Object.keys(currentStockByWh).find(k => k.toLowerCase() === whId.toLowerCase()) || whId;
+        const existingWhStock = Number(currentStockByWh[whKey] !== undefined ? currentStockByWh[whKey] : 0);
+        const newWhStock = existingWhStock + addedQty;
+        currentStockByWh[whKey] = newWhStock;
+
+        // Recalculate status based on newTotalStock
         const newStatus = calculateStockStatus(newTotalStock, prod.minReorderPoint);
 
         return {
           ...prod,
-          stockByWarehouse: newStockByWarehouse,
+          stockByWarehouse: currentStockByWh,
           totalStock: newTotalStock,
           status: newStatus,
           lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
@@ -287,12 +394,32 @@ export const InventoryProvider = ({ children }) => {
       return prod;
     }));
 
+    // 1b. Clear any stock alerts if replenished above threshold
+    (receipt.items || []).forEach(item => {
+      const prod = products.find(p =>
+        (item.productId && p.id && String(item.productId).toLowerCase() === String(p.id).toLowerCase()) ||
+        (item.sku && p.sku && String(item.sku).toLowerCase() === String(p.sku).toLowerCase()) ||
+        (item.productName && p.name && String(item.productName).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+      );
+      if (prod) {
+        const addedQty = Number(item.qty || 0);
+        const newTotal = (Number(prod.totalStock) || 0) + addedQty;
+        if (newTotal > Number(prod.minReorderPoint || 0)) {
+          setAlerts(prev => prev.filter(a => !(a.productId === prod.id && a.type === 'Stock')));
+        }
+      }
+    });
+
     // 2. Update Receipt status to Done
-    setReceipts(prev => prev.map(r => r.id === receiptId ? { ...r, status: 'Done' } : r));
+    setReceipts(prevReceipts => prevReceipts.map(r => 
+      (r.id === receipt.id || r.receiptNumber === receipt.receiptNumber)
+        ? { ...r, status: 'Done', validatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
+        : r
+    ));
 
     // 3. Create Ledger Entries for each received item
     const newLedgerEntries = receipt.items.map(item => ({
-      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)}`,
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       productName: item.productName,
       sku: item.sku,
@@ -309,12 +436,13 @@ export const InventoryProvider = ({ children }) => {
 
     // 4. Create Recent Activity
     const firstItem = receipt.items[0];
+    const totalUnitsReceived = receipt.items.reduce((sum, i) => sum + Number(i.qty || 0), 0);
     const newActivity = {
-      id: `ACT-${Date.now().toString().slice(-4)}`,
-      productName: firstItem?.productName || 'Multiple Products',
+      id: `ACT-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)}`,
+      productName: receipt.items.length === 1 ? firstItem?.productName : `${firstItem?.productName} +${receipt.items.length - 1} more`,
       operation: 'Received',
       type: 'receipt',
-      quantity: `+${receipt.items.reduce((sum, i) => sum + Number(i.qty), 0)} units`,
+      quantity: `+${totalUnitsReceived} units`,
       location: whName,
       timestamp: 'Just now',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -332,24 +460,90 @@ export const InventoryProvider = ({ children }) => {
 
     toast.success(
       '✓ Receipt Validated Successfully',
-      `Stock updated by +${receipt.items.reduce((sum, i) => sum + Number(i.qty), 0)} units in ${whName}.`
+      `Stock updated by +${totalUnitsReceived} units in ${whName}.`
     );
+
+    return true;
   };
 
   // 3. ADD DELIVERY
   const addDelivery = (deliveryData) => {
+    // Validation
+    if (!deliveryData.customer || !deliveryData.customer.trim()) {
+      toast.error('Validation Error', 'Customer name is required.');
+      return null;
+    }
+
+    if (!deliveryData.warehouseId) {
+      toast.error('Validation Error', 'Source dispatch warehouse must be selected.');
+      return null;
+    }
+
+    if (!deliveryData.items || !Array.isArray(deliveryData.items) || deliveryData.items.length === 0) {
+      toast.error('Validation Error', 'Delivery order must contain at least one item.');
+      return null;
+    }
+
+    const whId = resolveWarehouseId(deliveryData.warehouseId);
+    const whName = deliveryData.warehouseName || getWarehouseName(whId);
+
+    // Validate each item
+    for (const item of deliveryData.items) {
+      if (!item.productId && !item.sku && !item.productName) {
+        toast.error('Validation Error', 'Product information is required for all items.');
+        return null;
+      }
+      if (!item.qty || Number(item.qty) <= 0 || isNaN(Number(item.qty))) {
+        toast.error('Validation Error', 'Item quantity must be a positive number (> 0).');
+        return null;
+      }
+    }
+
+    // Check available warehouse stock for all items
+    const qtyByProduct = {};
+    for (const item of deliveryData.items) {
+      const prod = products.find(p =>
+        (item.productId && p.id && String(item.productId).toLowerCase() === String(p.id).toLowerCase()) ||
+        (item.sku && p.sku && String(item.sku).toLowerCase() === String(p.sku).toLowerCase()) ||
+        (item.productName && p.name && String(item.productName).trim().toLowerCase() === String(p.name).trim().toLowerCase()) ||
+        (item.name && p.name && String(item.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+      );
+
+      if (!prod) {
+        toast.error('Validation Error', `Product "${item.productName || item.sku || item.productId}" not found in inventory.`);
+        return null;
+      }
+
+      qtyByProduct[prod.id] = (qtyByProduct[prod.id] || 0) + Number(item.qty);
+    }
+
+    for (const [prodId, reqQty] of Object.entries(qtyByProduct)) {
+      const prod = products.find(p => p.id === prodId);
+      const currentStockByWh = prod.stockByWarehouse || {};
+      const whKey = Object.keys(currentStockByWh).find(k => k.toLowerCase() === whId.toLowerCase()) || whId;
+      const availableWhStock = Number(currentStockByWh[whKey] !== undefined ? currentStockByWh[whKey] : 0);
+
+      if (reqQty > availableWhStock) {
+        toast.error(
+          'Insufficient Stock',
+          `Cannot create delivery: "${prod.name}" has only ${availableWhStock} ${prod.unit || 'units'} available in ${whName}, but ${reqQty} requested.`
+        );
+        return null;
+      }
+    }
+
     const newId = `DEL-${2080 + deliveries.length + 1}`;
     const totalAmount = (deliveryData.items || []).reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.unitPrice || 0)), 0);
 
     const newDelivery = {
       id: newId,
       deliveryId: newId,
-      customer: deliveryData.customer || 'Apex Robotics International',
+      customer: deliveryData.customer,
       customerEmail: deliveryData.customerEmail || 'orders@client.com',
       shippingAddress: deliveryData.shippingAddress || '100 Innovation Way, Suite 400',
-      warehouseId: deliveryData.warehouseId || 'WH-MAIN',
-      warehouseName: getWarehouseName(deliveryData.warehouseId || 'WH-MAIN'),
-      date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      warehouseId: whId,
+      warehouseName: whName,
+      date: deliveryData.date || new Date().toISOString().slice(0, 16).replace('T', ' '),
       status: deliveryData.status || 'Draft',
       priority: deliveryData.priority || 'Normal',
       items: deliveryData.items || [],
@@ -367,48 +561,124 @@ export const InventoryProvider = ({ children }) => {
 
   // 4. ADVANCE / VALIDATE DELIVERY -> Decreases Stock & Adds Ledger Entry
   const advanceDeliveryStatus = (deliveryId) => {
-    const delivery = deliveries.find(d => d.id === deliveryId);
+    const delivery = deliveries.find(d => d.id === deliveryId || d.deliveryId === deliveryId);
     if (!delivery) return;
 
     if (delivery.status === 'Draft') {
-      setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status: 'Picking' } : d));
+      setDeliveries(prev => prev.map(d => (d.id === deliveryId || d.deliveryId === deliveryId) ? { ...d, status: 'Picking' } : d));
       toast.info('Picking Commenced', `Delivery #${delivery.deliveryId} moved to Picking phase.`);
     } else if (delivery.status === 'Picking') {
-      setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status: 'Packing' } : d));
+      setDeliveries(prev => prev.map(d => (d.id === deliveryId || d.deliveryId === deliveryId) ? { ...d, status: 'Packing' } : d));
       toast.info('Packing Started', `Delivery #${delivery.deliveryId} items packed and staged for courier.`);
-    } else if (delivery.status === 'Packing' || delivery.status === 'Ready') {
-      validateDelivery(deliveryId);
+    } else if (delivery.status === 'Packing') {
+      setDeliveries(prev => prev.map(d => (d.id === deliveryId || d.deliveryId === deliveryId) ? { ...d, status: 'Ready' } : d));
+      toast.info('Ready for Dispatch', `Delivery #${delivery.deliveryId} is ready for validation & dispatch.`);
     }
   };
 
   const validateDelivery = (deliveryId) => {
-    const delivery = deliveries.find(d => d.id === deliveryId);
-    if (!delivery) return;
-    if (delivery.status === 'Done') {
-      toast.warning('Already Dispatched', `Delivery #${delivery.deliveryId} has already been completed.`);
-      return;
+    const delivery = deliveries.find(d => d.id === deliveryId || d.deliveryId === deliveryId);
+    if (!delivery) {
+      toast.error('Not Found', 'Delivery order not found.');
+      return false;
     }
 
-    const whId = delivery.warehouseId;
-    const whName = delivery.warehouseName;
+    // 1. Prevent duplicate validation
+    if (delivery.status === 'Done') {
+      toast.warning('Already Dispatched', `Delivery #${delivery.deliveryId} has already been completed.`);
+      return false;
+    }
 
-    // 1. Update Product Stocks
-    setProducts(prev => prev.map(prod => {
-      const matchingItem = delivery.items.find(i => i.productId === prod.id || i.sku === prod.sku);
-      if (matchingItem) {
-        const reducedQty = Number(matchingItem.qty);
-        const currentWhStock = Number(prod.stockByWarehouse?.[whId] || 0);
-        const newWhStock = Math.max(0, currentWhStock - reducedQty);
-        const newStockByWarehouse = {
-          ...prod.stockByWarehouse,
-          [whId]: newWhStock
-        };
-        const newTotalStock = Object.values(newStockByWarehouse).reduce((a, b) => Number(a) + Number(b), 0);
+    if (delivery.status === 'Canceled' || delivery.status === 'Cancelled') {
+      toast.error('Validation Denied', `Delivery #${delivery.deliveryId} is canceled and cannot be validated.`);
+      return false;
+    }
+
+    // 2. Validate items
+    if (!delivery.items || !Array.isArray(delivery.items) || delivery.items.length === 0) {
+      toast.error('Validation Error', 'Delivery order contains no items.');
+      return false;
+    }
+
+    const hasInvalidQty = delivery.items.some(i => !i.qty || Number(i.qty) <= 0 || isNaN(Number(i.qty)));
+    if (hasInvalidQty) {
+      toast.error('Validation Error', 'All items in delivery must have a positive quantity (> 0).');
+      return false;
+    }
+
+    if (!delivery.warehouseId) {
+      toast.error('Validation Error', 'Source warehouse is missing from delivery order.');
+      return false;
+    }
+
+    const whId = resolveWarehouseId(delivery.warehouseId);
+    const whName = delivery.warehouseName || getWarehouseName(whId);
+
+    // 3. Check stock against SELECTED warehouse for ALL items BEFORE making any changes!
+    const qtyByProduct = {};
+    for (const item of delivery.items) {
+      const prod = products.find(p =>
+        (item.productId && p.id && String(item.productId).toLowerCase() === String(p.id).toLowerCase()) ||
+        (item.sku && p.sku && String(item.sku).toLowerCase() === String(p.sku).toLowerCase()) ||
+        (item.productName && p.name && String(item.productName).trim().toLowerCase() === String(p.name).trim().toLowerCase()) ||
+        (item.name && p.name && String(item.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+      );
+
+      if (!prod) {
+        toast.error('Validation Error', `Product "${item.productName || item.sku || item.productId}" not found in inventory.`);
+        return false;
+      }
+
+      qtyByProduct[prod.id] = (qtyByProduct[prod.id] || 0) + Number(item.qty);
+    }
+
+    for (const [prodId, totalReqQty] of Object.entries(qtyByProduct)) {
+      const prod = products.find(p => p.id === prodId);
+      const currentStockByWh = prod.stockByWarehouse || {};
+      const whKey = Object.keys(currentStockByWh).find(k => k.toLowerCase() === whId.toLowerCase()) || whId;
+      const availableWhStock = Number(currentStockByWh[whKey] !== undefined ? currentStockByWh[whKey] : 0);
+
+      if (totalReqQty > availableWhStock) {
+        toast.error(
+          'Insufficient Stock',
+          `Cannot validate delivery: "${prod.name}" has only ${availableWhStock} ${prod.unit || 'units'} available in ${whName}, but ${totalReqQty} requested.`
+        );
+        return false;
+      }
+    }
+
+    // 4. Update Product Stocks
+    // EXACT INVENTORY RULE:
+    // newStock = existingStock - deliveryQuantity
+    // newWarehouseStock = existingWarehouseStock - deliveryQuantity
+    setProducts(prevProducts => prevProducts.map(prod => {
+      const matchingItems = (delivery.items || []).filter(i =>
+        (i.productId && prod.id && String(i.productId).toLowerCase() === String(prod.id).toLowerCase()) ||
+        (i.sku && prod.sku && String(i.sku).toLowerCase() === String(prod.sku).toLowerCase()) ||
+        (i.productName && prod.name && String(i.productName).trim().toLowerCase() === String(prod.name).trim().toLowerCase()) ||
+        (i.name && prod.name && String(i.name).trim().toLowerCase() === String(prod.name).trim().toLowerCase())
+      );
+
+      if (matchingItems.length > 0) {
+        const reducedQty = matchingItems.reduce((sum, i) => sum + Number(i.qty || 0), 0);
+        
+        // Exact: newStock = existingStock - deliveryQuantity
+        const existingStock = Number(prod.totalStock !== undefined ? prod.totalStock : 0);
+        const newTotalStock = Math.max(0, existingStock - reducedQty);
+
+        // Exact: newWarehouseStock = existingWarehouseStock - deliveryQuantity
+        const currentStockByWh = prod.stockByWarehouse ? { ...prod.stockByWarehouse } : {};
+        const whKey = Object.keys(currentStockByWh).find(k => k.toLowerCase() === whId.toLowerCase()) || whId;
+        const existingWhStock = Number(currentStockByWh[whKey] !== undefined ? currentStockByWh[whKey] : 0);
+        const newWhStock = Math.max(0, existingWhStock - reducedQty);
+        currentStockByWh[whKey] = newWhStock;
+
+        // Recalculate status based on newTotalStock
         const newStatus = calculateStockStatus(newTotalStock, prod.minReorderPoint);
 
         return {
           ...prod,
-          stockByWarehouse: newStockByWarehouse,
+          stockByWarehouse: currentStockByWh,
           totalStock: newTotalStock,
           status: newStatus,
           lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
@@ -417,17 +687,67 @@ export const InventoryProvider = ({ children }) => {
       return prod;
     }));
 
-    // 2. Mark Delivery as Done
-    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status: 'Done' } : d));
+    // 4b. Update alerts if stock falls below reorder point or reaches zero
+    (delivery.items || []).forEach(item => {
+      const prod = products.find(p =>
+        (item.productId && p.id && String(item.productId).toLowerCase() === String(p.id).toLowerCase()) ||
+        (item.sku && p.sku && String(item.sku).toLowerCase() === String(p.sku).toLowerCase()) ||
+        (item.productName && p.name && String(item.productName).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+      );
+      if (prod) {
+        const reducedQty = Number(item.qty || 0);
+        const newTotal = Math.max(0, (Number(prod.totalStock) || 0) - reducedQty);
+        if (newTotal <= 0) {
+          setAlerts(prev => [
+            {
+              id: `ALT-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+              title: `Out of Stock: ${prod.name}`,
+              message: `Current stock reached 0 ${prod.unit || 'units'} across all facilities.`,
+              severity: 'Critical',
+              type: 'Stock',
+              productId: prod.id,
+              timestamp: 'Just now',
+              date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+              isRead: false,
+              actionText: 'Create Receipt PO'
+            },
+            ...prev.filter(a => !(a.productId === prod.id && a.type === 'Stock'))
+          ]);
+        } else if (newTotal <= Number(prod.minReorderPoint || 0)) {
+          setAlerts(prev => [
+            {
+              id: `ALT-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+              title: `Low Stock: ${prod.name}`,
+              message: `Total stock (${newTotal} ${prod.unit || 'units'}) has fallen below minimum reorder point (${prod.minReorderPoint} ${prod.unit || 'units'}).`,
+              severity: 'Warning',
+              type: 'Stock',
+              productId: prod.id,
+              timestamp: 'Just now',
+              date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+              isRead: false,
+              actionText: 'Review Replenishment'
+            },
+            ...prev.filter(a => !(a.productId === prod.id && a.type === 'Stock'))
+          ]);
+        }
+      }
+    });
 
-    // 3. Create Ledger Entries
+    // 5. Mark Delivery as Done
+    setDeliveries(prev => prev.map(d =>
+      (d.id === delivery.id || d.deliveryId === delivery.deliveryId)
+        ? { ...d, status: 'Done', validatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
+        : d
+    ));
+
+    // 6. Create Ledger Entries
     const newLedgerEntries = delivery.items.map(item => ({
-      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)}`,
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
       productName: item.productName,
       sku: item.sku,
       operation: 'Delivery',
-      reference: delivery.deliveryId,
+      reference: delivery.deliveryId || delivery.id,
       from: whName,
       to: `${delivery.customer} (Customer)`,
       quantity: -Number(item.qty),
@@ -437,12 +757,12 @@ export const InventoryProvider = ({ children }) => {
     }));
     setLedger(prev => [...newLedgerEntries, ...prev]);
 
-    // 4. Create Activity
+    // 7. Create Activity
     const firstItem = delivery.items[0];
-    const totalDeliveredQty = delivery.items.reduce((sum, i) => sum + Number(i.qty), 0);
+    const totalDeliveredQty = delivery.items.reduce((sum, i) => sum + Number(i.qty || 0), 0);
     const newActivity = {
-      id: `ACT-${Date.now().toString().slice(-4)}`,
-      productName: firstItem?.productName || 'Multiple Products',
+      id: `ACT-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000)}`,
+      productName: delivery.items.length === 1 ? firstItem?.productName : `${firstItem?.productName} +${delivery.items.length - 1} more`,
       operation: 'Delivered',
       type: 'delivery',
       quantity: `-${totalDeliveredQty} units`,
@@ -454,10 +774,19 @@ export const InventoryProvider = ({ children }) => {
     };
     setActivities(prev => [newActivity, ...prev]);
 
+    // 8. Fire confetti
+    try {
+      confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
+    } catch (e) {
+      // safe fallback
+    }
+
     toast.success(
       '✓ Delivery Completed & Validated',
       `Stock reduced by ${totalDeliveredQty} units from ${whName}. Out for delivery.`
     );
+
+    return true;
   };
 
   // 5. INTERNAL TRANSFER -> Source Warehouse - Qty, Destination Warehouse + Qty, Total Stock UNCHANGED!
@@ -718,8 +1047,8 @@ export const InventoryProvider = ({ children }) => {
     totalUnitsInStock: products.reduce((acc, p) => acc + Number(p.totalStock || 0), 0),
     lowStockCount: products.filter(p => p.status === 'Low Stock' || p.status === 'Critical').length,
     outOfStockCount: products.filter(p => p.status === 'Out of Stock' || p.totalStock <= 0).length,
-    pendingReceiptsCount: receipts.filter(r => r.status === 'Waiting' || r.status === 'Ready' || r.status === 'Draft').length,
-    pendingDeliveriesCount: deliveries.filter(d => d.status === 'Picking' || d.status === 'Packing' || d.status === 'Draft').length,
+    pendingReceiptsCount: receipts.filter(r => ['Draft', 'Waiting', 'Ready'].includes(r.status)).length,
+    pendingDeliveriesCount: deliveries.filter(d => ['Draft', 'Picking', 'Packing', 'Ready'].includes(d.status)).length,
     internalTransfersCount: transfers.length,
     unreadAlertsCount: alerts.filter(a => !a.isRead).length
   };
@@ -758,7 +1087,8 @@ export const InventoryProvider = ({ children }) => {
         dismissAlert,
         updateSettings,
         resetToDefaults,
-        getWarehouseName
+        getWarehouseName,
+        resolveWarehouseId
       }}
     >
       {children}

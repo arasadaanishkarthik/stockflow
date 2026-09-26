@@ -19,10 +19,15 @@ export const ConfirmDialog = ({
       onClose={onClose}
       maxWidth="max-w-md"
       showClose={false}
+      zIndex="z-[70]"
     >
       <div className="flex items-start gap-4">
         <div className={`w-11 h-11 rounded-2xl shrink-0 flex items-center justify-center ${
-          variant === 'danger' ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400' : 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
+          variant === 'danger'
+            ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
+            : variant === 'success'
+            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
+            : 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
         }`}>
           <AlertCircle className="w-6 h-6" />
         </div>

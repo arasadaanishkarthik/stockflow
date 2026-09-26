@@ -9,6 +9,8 @@ export const DataTable = ({
   pageSize = 10,
   emptyTitle = 'No data available',
   emptyDescription = 'There are no records to display.',
+  emptyActionLabel,
+  onEmptyAction,
   onRowClick,
   hoverable = true,
   className = ''
@@ -48,7 +50,15 @@ export const DataTable = ({
   const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   if (data.length === 0) {
-    return <EmptyState title={emptyTitle} description={emptyDescription} />;
+    return (
+      <EmptyState
+        title={emptyTitle}
+        description={emptyDescription}
+        actionLabel={emptyActionLabel}
+        onAction={onEmptyAction}
+        className={className}
+      />
+    );
   }
 
   return (
