@@ -4,16 +4,22 @@ import { StatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useInventory } from '../../context/InventoryContext';
-import { CheckCircle2, Building, Calendar, User, Package, FileText } from 'lucide-react';
+import { CheckCircle2, XCircle, Building, Calendar, User, Package, FileText } from 'lucide-react';
 
 export const ReceiptDetailModal = ({ isOpen, onClose, receipt }) => {
-  const { validateReceipt } = useInventory();
+  const { validateReceipt, cancelReceipt } = useInventory();
   if (!receipt) return null;
 
   const isDone = receipt.status === 'Done';
+  const isCanceled = receipt.status === 'Canceled';
 
   const handleValidate = () => {
     validateReceipt(receipt.id);
+    onClose();
+  };
+
+  const handleCancel = () => {
+    cancelReceipt(receipt.id);
     onClose();
   };
 
@@ -28,10 +34,21 @@ export const ReceiptDetailModal = ({ isOpen, onClose, receipt }) => {
         <div className="flex items-center justify-between w-full">
           <StatusBadge status={receipt.status} size="md" />
           <div className="flex items-center gap-2">
+            {!isDone && !isCanceled && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-600 border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                icon={XCircle}
+                onClick={handleCancel}
+              >
+                Cancel Receipt
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onClose}>
               Close
             </Button>
-            {!isDone && (
+            {!isDone && !isCanceled && (
               <Button
                 variant="success"
                 size="sm"

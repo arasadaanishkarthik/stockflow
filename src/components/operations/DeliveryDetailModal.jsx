@@ -4,13 +4,14 @@ import { StatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useInventory } from '../../context/InventoryContext';
-import { Truck, MapPin, Calendar, Package, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Truck, MapPin, Calendar, Package, ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
 
 export const DeliveryDetailModal = ({ isOpen, onClose, delivery }) => {
-  const { advanceDeliveryStatus, validateDelivery } = useInventory();
+  const { advanceDeliveryStatus, cancelDelivery } = useInventory();
   if (!delivery) return null;
 
   const isDone = delivery.status === 'Done';
+  const isCanceled = delivery.status === 'Canceled';
 
   const getNextActionLabel = () => {
     if (delivery.status === 'Draft') return 'Advance to Picking';
@@ -23,6 +24,11 @@ export const DeliveryDetailModal = ({ isOpen, onClose, delivery }) => {
 
   const handleAdvance = () => {
     advanceDeliveryStatus(delivery.id);
+    onClose();
+  };
+
+  const handleCancel = () => {
+    cancelDelivery(delivery.id);
     onClose();
   };
 
@@ -44,10 +50,21 @@ export const DeliveryDetailModal = ({ isOpen, onClose, delivery }) => {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {!isDone && !isCanceled && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-600 border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                icon={XCircle}
+                onClick={handleCancel}
+              >
+                Cancel Delivery
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={onClose}>
               Close
             </Button>
-            {!isDone && nextAction && (
+            {!isDone && !isCanceled && nextAction && (
               <Button
                 variant="primary"
                 size="sm"

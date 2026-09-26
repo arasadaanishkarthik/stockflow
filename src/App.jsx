@@ -8,6 +8,7 @@ import { InventoryProvider } from './context/InventoryContext';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { LoginPage } from './pages/auth/LoginPage';
 import { SignupPage } from './pages/auth/SignupPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 
 import { OverviewPage } from './pages/dashboard/OverviewPage';
 import { ProductsPage } from './pages/dashboard/ProductsPage';
@@ -57,6 +58,7 @@ export function App() {
                 {/* Auth Routes */}
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
                 {/* Dashboard Layout Routes */}
                 <Route

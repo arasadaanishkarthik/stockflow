@@ -43,6 +43,24 @@ const DEFAULT_SETTINGS = {
 // Unique ID generator that doesn't depend on array length (avoids collision on delete)
 const makeId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 
+// Helper: compute total stock strictly as the sum of all warehouse stocks
+export const calculateTotalStock = (product) => {
+  if (!product || !product.stockByWarehouse) return Number(product?.totalStock || 0);
+  return Object.values(product.stockByWarehouse).reduce((acc, qty) => acc + Number(qty || 0), 0);
+};
+
+// Helper: get warehouse stock for a product
+export const getWarehouseStock = (product, warehouseId) => {
+  if (!product || !product.stockByWarehouse) return 0;
+  return Number(product.stockByWarehouse[warehouseId] || 0);
+};
+
+// Helper: validate quantity
+export const validateQuantity = (qty) => {
+  const num = Number(qty);
+  return !isNaN(num) && num > 0;
+};
+
 // Helper: compute product stock status from single source of truth
 export const calculateStockStatus = (totalStock, minReorderPoint) => {
   const stock = Number(totalStock ?? 0);
@@ -58,83 +76,162 @@ export const InventoryProvider = ({ children }) => {
 
   // 1. PRODUCTS STATE
   const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-    const list = saved ? JSON.parse(saved) : initialProducts;
-    return list.map(p => ({
-      ...p,
-      status: calculateStockStatus(p.totalStock, p.minReorderPoint)
-    }));
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+      const list = saved ? JSON.parse(saved) : initialProducts;
+      return list.map(p => {
+        const total = calculateTotalStock(p);
+        return {
+          ...p,
+          totalStock: total,
+          status: calculateStockStatus(total, p.minReorderPoint)
+        };
+      });
+    } catch {
+      return initialProducts.map(p => {
+        const total = calculateTotalStock(p);
+        return {
+          ...p,
+          totalStock: total,
+          status: calculateStockStatus(total, p.minReorderPoint)
+        };
+      });
+    }
   });
 
   // 2. WAREHOUSES STATE
   const [warehouses, setWarehouses] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.WAREHOUSES);
-    return saved ? JSON.parse(saved) : initialWarehouses;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.WAREHOUSES);
+      return saved ? JSON.parse(saved) : initialWarehouses;
+    } catch {
+      return initialWarehouses;
+    }
   });
 
   // 3. RECEIPTS STATE
   const [receipts, setReceipts] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.RECEIPTS);
-    return saved ? JSON.parse(saved) : initialReceipts;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.RECEIPTS);
+      return saved ? JSON.parse(saved) : initialReceipts;
+    } catch {
+      return initialReceipts;
+    }
   });
 
   // 4. DELIVERIES STATE
   const [deliveries, setDeliveries] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
-    return saved ? JSON.parse(saved) : initialDeliveries;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
+      return saved ? JSON.parse(saved) : initialDeliveries;
+    } catch {
+      return initialDeliveries;
+    }
   });
 
   // 5. TRANSFERS STATE
   const [transfers, setTransfers] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
-    return saved ? JSON.parse(saved) : initialTransfers;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
+      return saved ? JSON.parse(saved) : initialTransfers;
+    } catch {
+      return initialTransfers;
+    }
   });
 
   // 6. ADJUSTMENTS STATE
   const [adjustments, setAdjustments] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ADJUSTMENTS);
-    return saved ? JSON.parse(saved) : initialAdjustments;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ADJUSTMENTS);
+      return saved ? JSON.parse(saved) : initialAdjustments;
+    } catch {
+      return initialAdjustments;
+    }
   });
 
   // 7. LEDGER / MOVE HISTORY STATE
   const [ledger, setLedger] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.LEDGER);
-    return saved ? JSON.parse(saved) : initialLedger;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.LEDGER);
+      return saved ? JSON.parse(saved) : initialLedger;
+    } catch {
+      return initialLedger;
+    }
   });
 
   // 8. ALERTS STATE
   const [alerts, setAlerts] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ALERTS);
-    return saved ? JSON.parse(saved) : initialAlerts;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ALERTS);
+      return saved ? JSON.parse(saved) : initialAlerts;
+    } catch {
+      return initialAlerts;
+    }
   });
 
   // 9. ACTIVITIES STATE
   const [activities, setActivities] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
-    return saved ? JSON.parse(saved) : initialActivities;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVITIES);
+      return saved ? JSON.parse(saved) : initialActivities;
+    } catch {
+      return initialActivities;
+    }
   });
 
   // 10. SETTINGS STATE
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
   });
 
-  // Sync to LocalStorage
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.WAREHOUSES, JSON.stringify(warehouses)); }, [warehouses]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(receipts)); }, [receipts]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(deliveries)); }, [deliveries]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers)); }, [transfers]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.ADJUSTMENTS, JSON.stringify(adjustments)); }, [adjustments]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledger)); }, [ledger]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.ALERTS, JSON.stringify(alerts)); }, [alerts]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities)); }, [activities]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)); }, [settings]);
+  // Sync to LocalStorage with error safety
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products)); } catch {}
+  }, [products]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.WAREHOUSES, JSON.stringify(warehouses)); } catch {}
+  }, [warehouses]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(receipts)); } catch {}
+  }, [receipts]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(deliveries)); } catch {}
+  }, [deliveries]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers)); } catch {}
+  }, [transfers]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.ADJUSTMENTS, JSON.stringify(adjustments)); } catch {}
+  }, [adjustments]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.LEDGER, JSON.stringify(ledger)); } catch {}
+  }, [ledger]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.ALERTS, JSON.stringify(alerts)); } catch {}
+  }, [alerts]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities)); } catch {}
+  }, [activities]);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)); } catch {}
+  }, [settings]);
 
   // Helper: get warehouse name by code or ID
   const getWarehouseName = (warehouseId) => {
-    // Use a functional lookup to always get the latest warehouses (avoid stale closure)
     const found = warehouses.find(w => w.id === warehouseId || w.code === warehouseId);
     return found ? found.name : warehouseId;
   };
@@ -161,23 +258,17 @@ export const InventoryProvider = ({ children }) => {
   };
 
   // DYNAMIC LOW-STOCK & OUT-OF-STOCK ALERT SYNCHRONIZATION
-  // Automatically keeps alerts in sync with actual inventory levels
   useEffect(() => {
     setAlerts(prevAlerts => {
-      // 1. Preserve non-stock alerts (Receipt, Delivery, Adjustment, Info)
       const nonStockAlerts = prevAlerts.filter(a => a.type !== 'Stock');
-
-      // 2. Derive stock alerts for all products at or below minReorderPoint
       const stockAlerts = [];
 
       products.forEach(p => {
         const stock = Number(p.totalStock ?? 0);
         const reorder = Number(p.minReorderPoint ?? 0);
 
-        // If stock > reorder threshold, no alert is needed (automatically cleared if restocked)
         if (stock > reorder) return;
 
-        // Check if an existing stock alert exists to preserve read status and id
         const existing = prevAlerts.find(
           a => a.type === 'Stock' && (a.productId === p.id || a.sku === p.sku)
         );
@@ -221,7 +312,6 @@ export const InventoryProvider = ({ children }) => {
         });
       });
 
-      // Avoid unnecessary state re-renders if alert list is unchanged
       const currentStockAlerts = prevAlerts.filter(a => a.type === 'Stock');
       const isIdentical =
         currentStockAlerts.length === stockAlerts.length &&
@@ -249,21 +339,29 @@ export const InventoryProvider = ({ children }) => {
   // PRODUCT MANAGEMENT
   // -------------------------------------------------------------
 
-  // ADD NEW PRODUCT
-  // stockByWarehouse: optional map { [whId]: qty }. If omitted, uses initialStock in warehouseId.
+  // ADD NEW PRODUCT (with unique SKU enforcement)
   const addProduct = (productData) => {
-    const newId = `PRD-${makeId('P')}`;
+    const rawSku = (productData.sku || `SKU-${makeId('S')}`).trim();
+    const cleanSku = rawSku.toUpperCase();
 
-    // Build stockByWarehouse — start with zeros for all current warehouses,
-    // then apply provided values.
+    // Guard: SKU must be unique
+    if (products.some(p => p.sku?.toUpperCase() === cleanSku)) {
+      toast.error('Duplicate SKU', `A product with SKU "${cleanSku}" already exists. SKU must be unique.`);
+      return null;
+    }
+
+    if (!productData.name || !productData.name.trim()) {
+      toast.error('Missing Product Name', 'Product name is required.');
+      return null;
+    }
+
+    const newId = `PRD-${makeId('P')}`;
     const baseStockMap = buildEmptyStockMap(warehouses);
 
     let initialWarehouseStock;
     if (productData.stockByWarehouse) {
-      // Merge provided values into base map (ignores warehouses not in system)
       initialWarehouseStock = { ...baseStockMap, ...productData.stockByWarehouse };
     } else {
-      // Place initialStock in the selected warehouse
       initialWarehouseStock = {
         ...baseStockMap,
         [productData.warehouseId || 'WH-MAIN']: Number(productData.initialStock || 0)
@@ -276,8 +374,8 @@ export const InventoryProvider = ({ children }) => {
 
     const newProduct = {
       id: newId,
-      sku: productData.sku || `SKU-${makeId('S')}`,
-      name: productData.name,
+      sku: cleanSku,
+      name: productData.name.trim(),
       category: productData.category || 'Raw Materials',
       unit: productData.unit || 'units',
       costPrice: Number(productData.costPrice || 10.0),
@@ -390,7 +488,7 @@ export const InventoryProvider = ({ children }) => {
     return formattedProducts.length;
   };
 
-  // UPDATE PRODUCT (metadata only — does NOT change stock levels)
+  // UPDATE PRODUCT (metadata only — stock levels preserved)
   const updateProduct = (id, updatedFields) => {
     setProducts(prev => prev.map(p => {
       if (p.id === id) {
@@ -427,11 +525,6 @@ export const InventoryProvider = ({ children }) => {
 
   /**
    * RECEIVE STOCK: Stock + quantity  (used by receipts & directly)
-   * @param {string} productId
-   * @param {string} warehouseId
-   * @param {number} quantity
-   * @param {string} [reference]
-   * @param {string} [supplierName]
    */
   const receiveStock = (productId, warehouseId, quantity, reference = '', supplierName = 'Supplier') => {
     const qty = Number(quantity);
@@ -473,8 +566,10 @@ export const InventoryProvider = ({ children }) => {
       reference: reference,
       from: supplierName,
       to: whName,
+      warehouse: whName,
       quantity: qty,
-      unit: prod?.unit || 'units'
+      unit: prod?.unit || 'units',
+      status: 'Completed'
     });
 
     // Activity
@@ -491,12 +586,7 @@ export const InventoryProvider = ({ children }) => {
   };
 
   /**
-   * DELIVER STOCK: Stock - quantity  (used by deliveries & directly)
-   * @param {string} productId
-   * @param {string} warehouseId
-   * @param {number} quantity
-   * @param {string} [reference]
-   * @param {string} [customerName]
+   * DELIVER STOCK: Stock - quantity (with negative stock rejection)
    */
   const deliverStock = (productId, warehouseId, quantity, reference = '', customerName = 'Customer') => {
     const qty = Number(quantity);
@@ -512,7 +602,7 @@ export const InventoryProvider = ({ children }) => {
     if (currentWhStock < qty) {
       toast.error(
         'Insufficient Stock',
-        `Only ${currentWhStock} ${prod?.unit || 'units'} available in ${whName}. Cannot deliver ${qty}.`
+        `Insufficient stock. Only ${currentWhStock} ${prod?.unit || 'units'} available in ${whName}. Cannot deliver ${qty}.`
       );
       return false;
     }
@@ -546,8 +636,10 @@ export const InventoryProvider = ({ children }) => {
       reference: reference,
       from: whName,
       to: `${customerName} (Customer)`,
+      warehouse: whName,
       quantity: -qty,
-      unit: prod?.unit || 'units'
+      unit: prod?.unit || 'units',
+      status: 'Completed'
     });
 
     // Activity
@@ -565,11 +657,6 @@ export const InventoryProvider = ({ children }) => {
 
   /**
    * TRANSFER STOCK: Source - qty, Destination + qty. Total unchanged.
-   * @param {string} productId
-   * @param {string} fromWarehouseId
-   * @param {string} toWarehouseId
-   * @param {number} quantity
-   * @param {string} [reference]
    */
   const transferStock = (productId, fromWarehouseId, toWarehouseId, quantity, reference = '') => {
     const qty = Number(quantity);
@@ -591,7 +678,7 @@ export const InventoryProvider = ({ children }) => {
     if (currentFromStock < qty) {
       toast.error(
         'Insufficient Stock',
-        `Only ${currentFromStock} ${prod?.unit || 'units'} available in ${fromWhName}.`
+        `Insufficient stock. Only ${currentFromStock} ${prod?.unit || 'units'} are available at ${fromWhName}.`
       );
       return false;
     }
@@ -606,10 +693,14 @@ export const InventoryProvider = ({ children }) => {
           [fromWarehouseId]: Math.max(0, curFromStock - qty),
           [toWarehouseId]: curToStock + qty
         };
-        // Total stock MUST remain the same for a transfer
+        const newTotalStock = Object.values(newStockByWarehouse).reduce((a, b) => Number(a) + Number(b), 0);
+        const newStatus = calculateStockStatus(newTotalStock, p.minReorderPoint);
+
         return {
           ...p,
           stockByWarehouse: newStockByWarehouse,
+          totalStock: newTotalStock,
+          status: newStatus,
           lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
         };
       }
@@ -624,8 +715,10 @@ export const InventoryProvider = ({ children }) => {
       reference: reference,
       from: fromWhName,
       to: toWhName,
+      warehouse: fromWhName,
       quantity: qty,
-      unit: prod?.unit || 'units'
+      unit: prod?.unit || 'units',
+      status: 'Completed'
     });
 
     // Activity
@@ -642,12 +735,7 @@ export const InventoryProvider = ({ children }) => {
   };
 
   /**
-   * ADJUST STOCK: Sets stock to physical count for a specific warehouse.
-   * Total stock = sum of all warehouse stocks after adjustment.
-   * @param {string} productId
-   * @param {string} warehouseId
-   * @param {number} physicalQty  — the actual counted quantity
-   * @param {string} [reason]
+   * ADJUST STOCK: Sets warehouse stock to physical count. Total stock = sum of all warehouse stocks.
    */
   const adjustStock = (productId, warehouseId, physicalQty, reason = 'Cycle Count Variance') => {
     const physical = Number(physicalQty);
@@ -689,8 +777,10 @@ export const InventoryProvider = ({ children }) => {
       reference: `ADJ-${Date.now().toString().slice(-6)}`,
       from: whName,
       to: `${reason} (${difference >= 0 ? '+' : ''}${difference} ${prod?.unit || 'units'})`,
+      warehouse: whName,
       quantity: difference,
-      unit: prod?.unit || 'units'
+      unit: prod?.unit || 'units',
+      status: 'Completed'
     });
 
     // Activity
@@ -712,8 +802,7 @@ export const InventoryProvider = ({ children }) => {
   };
 
   /**
-   * ADD LEDGER ENTRY directly (for other team members' custom operations)
-   * @param {Object} entryData
+   * ADD LEDGER ENTRY directly
    */
   const addLedgerEntry = (entryData) => {
     const newLedgerEntry = {
@@ -725,6 +814,7 @@ export const InventoryProvider = ({ children }) => {
       reference: entryData.reference || '',
       from: entryData.from || '',
       to: entryData.to || '',
+      warehouse: entryData.warehouse || entryData.to || 'Main Warehouse',
       quantity: Number(entryData.quantity || 0),
       unit: entryData.unit || 'units',
       user: entryData.user || 'Anish',
@@ -735,10 +825,10 @@ export const InventoryProvider = ({ children }) => {
   };
 
   // -------------------------------------------------------------
-  // RECEIPT OPERATIONS (document-based, validates to update stock)
+  // RECEIPT OPERATIONS
   // -------------------------------------------------------------
 
-  // 1. ADD RECEIPT (creates a receipt document, does NOT update stock yet)
+  // 1. ADD RECEIPT
   const addReceipt = (receiptData) => {
     const newId = `REC-${1040 + receipts.length + 1}`;
     const totalAmount = (receiptData.items || []).reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.unitCost || 0)), 0);
@@ -760,7 +850,6 @@ export const InventoryProvider = ({ children }) => {
     };
 
     setReceipts(prev => [newReceipt, ...prev]);
-
     toast.success('Receipt Created', `Receipt #${newReceipt.receiptNumber} generated.`);
     return newReceipt;
   };
@@ -768,14 +857,18 @@ export const InventoryProvider = ({ children }) => {
   // 2. VALIDATE RECEIPT → Increases Stock & Adds Ledger Entry
   const validateReceipt = (receiptId) => {
     const receipt = receipts.find(r => r.id === receiptId);
-    if (!receipt) return;
+    if (!receipt) return false;
     if (receipt.status === 'Done') {
       toast.warning('Already Validated', `Receipt #${receipt.receiptNumber} has already been marked as Done.`);
-      return;
+      return false;
+    }
+    if (receipt.status === 'Canceled' || receipt.status === 'Cancelled') {
+      toast.error('Receipt Canceled', `Receipt #${receipt.receiptNumber} was canceled and cannot be validated.`);
+      return false;
     }
 
     const whId = receipt.warehouseId;
-    const whName = receipt.warehouseName;
+    const whName = receipt.warehouseName || getWarehouseName(whId);
 
     // 1. Update Product Stocks (Stock + quantity)
     setProducts(prev => prev.map(prod => {
@@ -835,17 +928,34 @@ export const InventoryProvider = ({ children }) => {
       status: 'success'
     });
 
-    // 5. Fire confetti & celebration
     try {
       confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
-    } catch (e) {
-      // safe fallback
-    }
+    } catch {}
 
     toast.success(
       '✓ Receipt Validated Successfully',
       `Stock updated by +${totalQty} units in ${whName}.`
     );
+    return true;
+  };
+
+  // 2b. CANCEL RECEIPT
+  const cancelReceipt = (receiptId) => {
+    const receipt = receipts.find(r => r.id === receiptId);
+    if (!receipt) return false;
+
+    if (receipt.status === 'Done') {
+      toast.error('Cannot Cancel Validated Receipt', `Receipt #${receipt.receiptNumber} has already updated inventory.`);
+      return false;
+    }
+    if (receipt.status === 'Canceled' || receipt.status === 'Cancelled') {
+      toast.info('Already Canceled', `Receipt #${receipt.receiptNumber} is already canceled.`);
+      return false;
+    }
+
+    setReceipts(prev => prev.map(r => r.id === receiptId ? { ...r, status: 'Canceled' } : r));
+    toast.warning('Receipt Canceled', `Receipt #${receipt.receiptNumber} marked as Canceled. No stock was added.`);
+    return true;
   };
 
   // -------------------------------------------------------------
@@ -881,7 +991,7 @@ export const InventoryProvider = ({ children }) => {
     return newDelivery;
   };
 
-  // 4. ADVANCE / VALIDATE DELIVERY → Decreases Stock & Adds Ledger Entry
+  // 4. ADVANCE DELIVERY STATUS
   const advanceDeliveryStatus = (deliveryId) => {
     const delivery = deliveries.find(d => d.id === deliveryId);
     if (!delivery) return;
@@ -897,18 +1007,38 @@ export const InventoryProvider = ({ children }) => {
     }
   };
 
+  // 4b. VALIDATE DELIVERY (Strict pre-validation to prevent negative stock)
   const validateDelivery = (deliveryId) => {
     const delivery = deliveries.find(d => d.id === deliveryId);
-    if (!delivery) return;
+    if (!delivery) return false;
     if (delivery.status === 'Done') {
       toast.warning('Already Dispatched', `Delivery #${delivery.deliveryId} has already been completed.`);
-      return;
+      return false;
+    }
+    if (delivery.status === 'Canceled' || delivery.status === 'Cancelled') {
+      toast.error('Delivery Canceled', `Delivery #${delivery.deliveryId} was canceled and cannot be completed.`);
+      return false;
     }
 
     const whId = delivery.warehouseId;
-    const whName = delivery.warehouseName;
+    const whName = delivery.warehouseName || getWarehouseName(whId);
 
-    // 1. Update Product Stocks (Delivery: Stock - quantity)
+    // CRITICAL PRE-VALIDATION: Check sufficient stock for EVERY item in this warehouse!
+    for (const item of delivery.items) {
+      const prod = products.find(p => p.id === item.productId || p.sku === item.sku);
+      const availableWhStock = Number(prod?.stockByWarehouse?.[whId] || 0);
+      const reqQty = Number(item.qty || 0);
+
+      if (availableWhStock < reqQty) {
+        toast.error(
+          'Insufficient Stock',
+          `Insufficient stock. Only ${availableWhStock} ${item.unit || 'units'} available for "${prod?.name || item.productName}" in ${whName}.`
+        );
+        return false;
+      }
+    }
+
+    // 1. Update Product Stocks
     setProducts(prev => prev.map(prod => {
       const matchingItem = delivery.items.find(i => i.productId === prod.id || i.sku === prod.sku);
       if (matchingItem) {
@@ -970,20 +1100,39 @@ export const InventoryProvider = ({ children }) => {
       '✓ Delivery Completed & Validated',
       `Stock reduced by ${totalDeliveredQty} units from ${whName}. Out for delivery.`
     );
+    return true;
+  };
+
+  // 4c. CANCEL DELIVERY
+  const cancelDelivery = (deliveryId) => {
+    const delivery = deliveries.find(d => d.id === deliveryId);
+    if (!delivery) return false;
+
+    if (delivery.status === 'Done') {
+      toast.error('Cannot Cancel Completed Delivery', `Delivery #${delivery.deliveryId} has already reduced inventory.`);
+      return false;
+    }
+    if (delivery.status === 'Canceled' || delivery.status === 'Cancelled') {
+      toast.info('Already Canceled', `Delivery #${delivery.deliveryId} is already canceled.`);
+      return false;
+    }
+
+    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status: 'Canceled' } : d));
+    toast.warning('Delivery Canceled', `Delivery #${delivery.deliveryId} marked as Canceled. No stock was removed.`);
+    return true;
   };
 
   // -------------------------------------------------------------
   // TRANSFER OPERATIONS
   // -------------------------------------------------------------
 
-  // 5. INTERNAL TRANSFER → Source Warehouse - Qty, Destination Warehouse + Qty, Total Stock UNCHANGED!
+  // 5. CREATE INTERNAL TRANSFER
   const createTransfer = (transferData) => {
     const newId = `TRF-${3010 + transfers.length + 1}`;
     const qty = Number(transferData.qty || 1);
     const prod = products.find(p => p.id === transferData.productId || p.sku === transferData.sku);
     const fromWhId = transferData.fromWarehouseId || 'WH-MAIN';
     const toWhId = transferData.toWarehouseId || 'WH-PROD';
-    // Default to Pending — stock moves only on explicit validateTransfer()
     const status = transferData.status || 'Pending';
 
     if (fromWhId === toWhId) {
@@ -993,7 +1142,6 @@ export const InventoryProvider = ({ children }) => {
 
     const fromWhName = getWarehouseName(fromWhId);
     const toWhName = getWarehouseName(toWhId);
-
 
     const newTransfer = {
       id: newId,
@@ -1023,47 +1171,45 @@ export const InventoryProvider = ({ children }) => {
     return newTransfer;
   };
 
-  // 5b. VALIDATE TRANSFER -> Moves stock, writes ledger + activity (two-step workflow)
+  // 5b. VALIDATE TRANSFER -> Moves stock, writes ledger + activity
   const validateTransfer = (transferId) => {
     const transfer = transfers.find(t => t.id === transferId);
     if (!transfer) {
       toast.error('Transfer Not Found', `No transfer record with ID ${transferId} exists.`);
-      return;
+      return false;
     }
 
-    // Guard: already completed
     if (transfer.status === 'Completed') {
       toast.warning(
         'Already Validated',
         `Transfer #${transfer.transferNumber} has already been completed. Stock was not changed again.`
       );
-      return;
+      return false;
     }
 
-    // Guard: cancelled transfers cannot be validated
-    if (transfer.status === 'Cancelled') {
+    if (transfer.status === 'Cancelled' || transfer.status === 'Canceled') {
       toast.error(
         'Transfer Cancelled',
         `Transfer #${transfer.transferNumber} was cancelled and cannot be validated.`
       );
-      return;
+      return false;
     }
 
     const prod = products.find(p => p.id === transfer.productId);
     const fromWhId = transfer.fromWarehouseId;
     const toWhId = transfer.toWarehouseId;
     const qty = Number(transfer.qty);
-    const fromWhName = transfer.fromWarehouseName;
-    const toWhName = transfer.toWarehouseName;
+    const fromWhName = transfer.fromWarehouseName || getWarehouseName(fromWhId);
+    const toWhName = transfer.toWarehouseName || getWarehouseName(toWhId);
 
-    // Guard: insufficient source stock
+    // Guard: check source stock
     const availableAtSource = Number(prod?.stockByWarehouse?.[fromWhId] || 0);
     if (availableAtSource < qty) {
       toast.error(
-        'Insufficient Source Stock',
-        `Only ${availableAtSource} ${transfer.unit} available at ${fromWhName}. Cannot transfer ${qty} ${transfer.unit}.`
+        'Insufficient Stock',
+        `Insufficient stock. Only ${availableAtSource} ${transfer.unit} are available at ${fromWhName}.`
       );
-      return;
+      return false;
     }
 
     // 1. Move stock: source decreases, destination increases, total unchanged
@@ -1130,33 +1276,35 @@ export const InventoryProvider = ({ children }) => {
       '✓ Transfer Validated & Executed',
       `${qty} ${transfer.unit} moved from ${fromWhName} to ${toWhName}. Total inventory unchanged.`
     );
+    return true;
   };
 
-  // 5c. CANCEL TRANSFER -> Marks cancelled, no stock changes
+  // 5c. CANCEL TRANSFER
   const cancelTransfer = (transferId) => {
     const transfer = transfers.find(t => t.id === transferId);
-    if (!transfer) return;
+    if (!transfer) return false;
 
     if (transfer.status === 'Completed') {
       toast.warning('Cannot Cancel', `Transfer #${transfer.transferNumber} is already completed and cannot be cancelled.`);
-      return;
+      return false;
     }
-    if (transfer.status === 'Cancelled') {
+    if (transfer.status === 'Cancelled' || transfer.status === 'Canceled') {
       toast.info('Already Cancelled', `Transfer #${transfer.transferNumber} is already cancelled.`);
-      return;
+      return false;
     }
 
     setTransfers(prev => prev.map(t =>
       t.id === transferId ? { ...t, status: 'Cancelled' } : t
     ));
     toast.warning('Transfer Cancelled', `Transfer #${transfer.transferNumber} has been cancelled. No stock was moved.`);
+    return true;
   };
 
   // -------------------------------------------------------------
   // ADJUSTMENT OPERATIONS
   // -------------------------------------------------------------
 
-  // 6. INVENTORY ADJUSTMENT → System Qty vs Physical Qty
+  // 6. INVENTORY ADJUSTMENT
   const applyAdjustment = (adjustmentData) => {
     const newId = `ADJ-${4000 + adjustments.length + 1}`;
     const prod = products.find(p => p.id === adjustmentData.productId || p.sku === adjustmentData.sku);
@@ -1248,19 +1396,19 @@ export const InventoryProvider = ({ children }) => {
     return newAdjustment;
   };
 
-  // 6b. APPROVE PENDING ADJUSTMENT -> applies stock for 'Pending Approval' records
+  // 6b. APPROVE PENDING ADJUSTMENT
   const approveAdjustment = (adjustmentId) => {
     const adjustment = adjustments.find(a => a.id === adjustmentId);
     if (!adjustment) {
       toast.error('Not Found', 'Adjustment record not found.');
-      return;
+      return false;
     }
     if (adjustment.status === 'Applied') {
       toast.warning(
         'Already Applied',
         `Adjustment #${adjustment.adjustmentNumber} has already been applied. Stock was not changed again.`
       );
-      return;
+      return false;
     }
 
     const prod = products.find(p => p.id === adjustment.productId);
@@ -1269,7 +1417,6 @@ export const InventoryProvider = ({ children }) => {
     const physicalQty = Number(adjustment.physicalQty);
     const difference = Number(adjustment.difference);
 
-    // Apply stock: set warehouse qty to the physical count
     if (prod) {
       setProducts(prev => prev.map(p => {
         if (p.id === prod.id) {
@@ -1288,14 +1435,12 @@ export const InventoryProvider = ({ children }) => {
       }));
     }
 
-    // Mark adjustment as Applied
     setAdjustments(prev => prev.map(a =>
       a.id === adjustmentId
         ? { ...a, status: 'Applied', approvedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
         : a
     ));
 
-    // Ledger entry
     const newLedgerEntry = {
       id: makeId('LED'),
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
@@ -1313,7 +1458,6 @@ export const InventoryProvider = ({ children }) => {
     };
     setLedger(prev => [newLedgerEntry, ...prev]);
 
-    // Activity entry
     addActivity({
       productName: adjustment.productName,
       operation: 'Adjusted',
@@ -1327,15 +1471,27 @@ export const InventoryProvider = ({ children }) => {
       '✓ Adjustment Approved & Applied',
       `Stock updated to ${physicalQty} ${adjustment.unit} for "${adjustment.productName}" at ${whName} (${difference > 0 ? '+' : ''}${difference}).`
     );
+    return true;
   };
 
-  // 7. WAREHOUSE MANAGEMENT
+  // -------------------------------------------------------------
+  // WAREHOUSE MANAGEMENT
+  // -------------------------------------------------------------
+
+  // 7. ADD WAREHOUSE (with duplicate code check)
   const addWarehouse = (whData) => {
-    const newId = `WH-${(whData.code || 'LOC').toUpperCase()}`;
+    const rawCode = (whData.code || 'LOC').trim().toUpperCase();
+    const newId = rawCode.startsWith('WH-') ? rawCode : `WH-${rawCode}`;
+
+    if (warehouses.some(w => w.code?.toUpperCase() === rawCode || w.id?.toUpperCase() === newId)) {
+      toast.error('Duplicate Warehouse Code', `A facility with code "${rawCode}" already exists.`);
+      return null;
+    }
+
     const newWarehouse = {
       id: newId,
-      code: whData.code?.toUpperCase() || newId,
-      name: whData.name,
+      code: rawCode,
+      name: whData.name.trim(),
       city: whData.city || 'Chicago, IL',
       address: whData.address || 'Logistics Park Blvd',
       manager: whData.manager || 'Anish',
@@ -1350,6 +1506,48 @@ export const InventoryProvider = ({ children }) => {
     setWarehouses(prev => [...prev, newWarehouse]);
     toast.success('Warehouse Added', `"${newWarehouse.name}" added to facilities network.`);
     return newWarehouse;
+  };
+
+  // 7b. UPDATE WAREHOUSE
+  const updateWarehouse = (id, updatedFields) => {
+    setWarehouses(prev => prev.map(w => w.id === id ? { ...w, ...updatedFields } : w));
+    toast.success('Warehouse Updated', 'Facility details have been updated.');
+  };
+
+  // 7c. TOGGLE WAREHOUSE STATUS
+  const toggleWarehouseStatus = (id) => {
+    const wh = warehouses.find(w => w.id === id);
+    if (!wh) return;
+    const newStatus = wh.status === 'Active' ? 'Inactive' : 'Active';
+
+    if (newStatus === 'Inactive') {
+      const hasStock = products.some(p => Number(p.stockByWarehouse?.[id] || 0) > 0);
+      if (hasStock) {
+        toast.warning('Facility Has Stock', `Note: "${wh.name}" currently holds inventory.`);
+      }
+    }
+
+    setWarehouses(prev => prev.map(w => w.id === id ? { ...w, status: newStatus } : w));
+    toast.info('Status Updated', `"${wh.name}" is now ${newStatus}.`);
+  };
+
+  // 7d. DELETE WAREHOUSE (with stock allocation prevention)
+  const deleteWarehouse = (id) => {
+    const wh = warehouses.find(w => w.id === id);
+    if (!wh) return false;
+
+    const totalStockInWh = products.reduce((sum, p) => sum + Number(p.stockByWarehouse?.[id] || 0), 0);
+    if (totalStockInWh > 0) {
+      toast.error(
+        'Cannot Delete Warehouse',
+        `Facility "${wh.name}" contains ${totalStockInWh} units of inventory. Transfer or adjust stock to 0 before deleting.`
+      );
+      return false;
+    }
+
+    setWarehouses(prev => prev.filter(w => w.id !== id));
+    toast.success('Warehouse Deleted', `"${wh.name}" has been removed.`);
+    return true;
   };
 
   // -------------------------------------------------------------
@@ -1393,23 +1591,22 @@ export const InventoryProvider = ({ children }) => {
     setAlerts(initialAlerts);
     setActivities(initialActivities);
     setSettings(DEFAULT_SETTINGS);
-    localStorage.clear();
+    try { localStorage.clear(); } catch {}
     toast.info('Factory Reset', 'Mock data has been restored to default initial state.');
   };
 
   // -------------------------------------------------------------
   // REAL-TIME DASHBOARD KPIs
-  // Computed fresh from live state every render — no stale values
   // -------------------------------------------------------------
   const kpiMetrics = {
-    totalProducts: products.length,                                                          // ALL products in catalog
-    totalProductsInStock: products.reduce((acc, p) => acc + (p.totalStock > 0 ? 1 : 0), 0), // products WITH stock
+    totalProducts: products.length,
+    totalProductsInStock: products.filter(p => Number(p.totalStock) > 0).length,
     totalUnitsInStock: products.reduce((acc, p) => acc + Number(p.totalStock || 0), 0),
     lowStockCount: products.filter(p => Number(p.totalStock) > 0 && Number(p.totalStock) <= Number(p.minReorderPoint)).length,
     outOfStockCount: products.filter(p => Number(p.totalStock) <= 0).length,
-    pendingReceiptsCount: receipts.filter(r => ['Draft', 'Waiting', 'Ready'].includes(r.status)).length,
-    pendingDeliveriesCount: deliveries.filter(d => ['Draft', 'Picking', 'Packing', 'Ready'].includes(d.status)).length,
-    internalTransfersCount: transfers.length,
+    pendingReceiptsCount: receipts.filter(r => r.status !== 'Done' && r.status !== 'Canceled' && r.status !== 'Cancelled').length,
+    pendingDeliveriesCount: deliveries.filter(d => d.status !== 'Done' && d.status !== 'Canceled' && d.status !== 'Cancelled').length,
+    internalTransfersCount: transfers.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled' && t.status !== 'Canceled').length,
     unreadAlertsCount: alerts.filter(a => !a.isRead).length,
     activeWarehousesCount: warehouses.filter(w => w.status === 'Active').length
   };
@@ -1432,7 +1629,13 @@ export const InventoryProvider = ({ children }) => {
         activities,
         settings,
         kpiMetrics,
+
+        // Helpers & Primitives
         calculateStockStatus,
+        calculateTotalStock,
+        getWarehouseStock,
+        validateQuantity,
+        getWarehouseName,
 
         // Product CRUD
         addProduct,
@@ -1440,27 +1643,32 @@ export const InventoryProvider = ({ children }) => {
         updateProduct,
         deleteProduct,
 
-        // Stock operation primitives (for Member 2 & 3 to call directly)
+        // Stock operation primitives
         receiveStock,
         deliverStock,
         transferStock,
         adjustStock,
         addLedgerEntry,
 
-        // Document-based operations (Receipts, Deliveries, Transfers, Adjustments)
+        // Document-based operations
         addReceipt,
         validateReceipt,
+        cancelReceipt,
         addDelivery,
         advanceDeliveryStatus,
         validateDelivery,
+        cancelDelivery,
         createTransfer,
         validateTransfer,
         cancelTransfer,
         applyAdjustment,
         approveAdjustment,
 
-        // Warehouse
+        // Warehouse Management
         addWarehouse,
+        updateWarehouse,
+        toggleWarehouseStatus,
+        deleteWarehouse,
 
         // Alerts
         markAlertAsRead,
@@ -1470,9 +1678,6 @@ export const InventoryProvider = ({ children }) => {
         // Settings
         updateSettings,
         resetToDefaults,
-
-        // Utilities
-        getWarehouseName
       }}
     >
       {children}

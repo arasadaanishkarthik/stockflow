@@ -16,6 +16,7 @@ import {
   Eye,
   ArrowRight,
   CheckCircle2,
+  XCircle,
   Building,
   Package,
   Activity,
@@ -24,7 +25,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 
 export const DeliveriesPage = () => {
-  const { deliveries, advanceDeliveryStatus, warehouses } = useInventory();
+  const { deliveries, advanceDeliveryStatus, cancelDelivery, warehouses } = useInventory();
   const [searchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -185,7 +186,17 @@ export const DeliveriesPage = () => {
               <Eye className="w-4 h-4" />
             </button>
 
-            {row.status !== 'Done' && actionTitle && (
+            {row.status !== 'Done' && row.status !== 'Canceled' && (
+              <button
+                onClick={() => cancelDelivery(row.id)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                title="Cancel Delivery Order"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            )}
+
+            {row.status !== 'Done' && row.status !== 'Canceled' && actionTitle && (
               <Button
                 variant={row.status === 'Packing' ? 'primary' : 'secondary'}
                 size="xs"

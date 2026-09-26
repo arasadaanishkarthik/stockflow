@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { StatusBadge } from '../common/StatusBadge';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { formatNumber, formatCurrency } from '../../utils/formatters';
-import { Warehouse, MapPin, User, Layers, Thermometer, Box, Package } from 'lucide-react';
+import { Warehouse, MapPin, User, Layers, Thermometer, Box, Package, Power, Trash2 } from 'lucide-react';
 import { useInventory } from '../../context/InventoryContext';
 
 export const WarehouseDetailModal = ({ isOpen, onClose, warehouse }) => {
-  const { products } = useInventory();
+  const { products, toggleWarehouseStatus, deleteWarehouse } = useInventory();
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
   if (!warehouse) return null;
 
   // Filter products located in this warehouse
@@ -27,22 +30,56 @@ export const WarehouseDetailModal = ({ isOpen, onClose, warehouse }) => {
 
   const usagePct = Math.min(100, Math.round((totalStockUnits / (warehouse.capacity || 10000)) * 100));
 
+  const handleToggleStatus = () => {
+    toggleWarehouseStatus(warehouse.id);
+  };
+
+  const handleDelete = () => {
+    const success = deleteWarehouse(warehouse.id);
+    if (success) {
+      setIsDeleteConfirmOpen(false);
+      onClose();
+    }
+  };
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={warehouse.name}
-      subtitle={`Code: ${warehouse.code} • ${warehouse.type} • Managed by ${warehouse.manager}`}
-      maxWidth="max-w-3xl"
-      footer={
-        <div className="flex items-center justify-between w-full">
-          <StatusBadge status={warehouse.status} size="md" />
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Close Facility View
-          </Button>
-        </div>
-      }
-    >
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={warehouse.name}
+        subtitle={`Code: ${warehouse.code} • ${warehouse.type} • Managed by ${warehouse.manager}`}
+        maxWidth="max-w-3xl"
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={warehouse.status} size="md" />
+              <Button
+                variant="outline"
+                size="xs"
+                icon={Power}
+                onClick={handleToggleStatus}
+              >
+                {warehouse.status === 'Active' ? 'Set Inactive' : 'Set Active'}
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-600 border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                icon={Trash2}
+                onClick={() => setIsDeleteConfirmOpen(true)}
+              >
+                Delete Facility
+              </Button>
+              <Button variant="outline" size="sm" onClick={onClose}>
+                Close
+              </Button>
+            </div>
+          </div>
+        }
+      >
       <div className="space-y-6">
         {/* KPI Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -160,5 +197,17 @@ export const WarehouseDetailModal = ({ isOpen, onClose, warehouse }) => {
         </div>
       </div>
     </Modal>
+
+    <ConfirmDialog
+      isOpen={isDeleteConfirmOpen}
+      onClose={() => setIsDeleteConfirmOpen(false)}
+      onConfirm={handleDelete}
+      variant="danger"
+      title={`Delete Warehouse ${warehouse.name}`}
+      message={`Are you sure you want to permanently delete warehouse "${warehouse.name}" (${warehouse.code})?\n\nNote: A warehouse holding active stock cannot be deleted until all stock is transferred or adjusted out.`}
+      confirmText="Yes, Delete Warehouse"
+      cancelText="Cancel"
+    />
+  </>
   );
 };

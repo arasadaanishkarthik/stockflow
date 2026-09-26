@@ -174,16 +174,12 @@ export const LoginPage = () => {
                 <span>Remember me for 30 days</span>
               </label>
 
-              <a
-                href="#forgot"
-                onClick={(e) => {
-                  e.preventDefault();
-                  toast.info('Password Reset Simulation', 'Reset link sent to demo email.');
-                }}
+              <Link
+                to="/forgot-password"
                 className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <Button

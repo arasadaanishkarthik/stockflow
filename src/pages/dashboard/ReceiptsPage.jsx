@@ -15,6 +15,7 @@ import {
   Download,
   Eye,
   CheckCircle2,
+  XCircle,
   Building,
   Calendar,
   Layers,
@@ -23,7 +24,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 
 export const ReceiptsPage = () => {
-  const { receipts, validateReceipt, warehouses } = useInventory();
+  const { receipts, validateReceipt, cancelReceipt, warehouses } = useInventory();
   const [searchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -161,15 +162,24 @@ export const ReceiptsPage = () => {
             <Eye className="w-4 h-4" />
           </button>
 
-          {row.status !== 'Done' && (
-            <Button
-              variant="success"
-              size="xs"
-              icon={CheckCircle2}
-              onClick={() => validateReceipt(row.id)}
-            >
-              Validate
-            </Button>
+          {row.status !== 'Done' && row.status !== 'Canceled' && (
+            <>
+              <button
+                onClick={() => cancelReceipt(row.id)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                title="Cancel Receipt"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+              <Button
+                variant="success"
+                size="xs"
+                icon={CheckCircle2}
+                onClick={() => validateReceipt(row.id)}
+              >
+                Validate
+              </Button>
+            </>
           )}
         </div>
       )

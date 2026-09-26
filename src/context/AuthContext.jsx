@@ -37,22 +37,29 @@ export const DEMO_USERS = {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('stockflow_user');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Ensure userRole exists on saved user
-      if (!parsed.userRole) {
-        parsed.userRole = 'manager';
-        parsed.roleLabel = 'Inventory Manager';
+    try {
+      const saved = localStorage.getItem('stockflow_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.userRole) {
+          parsed.userRole = 'manager';
+          parsed.roleLabel = 'Inventory Manager';
+        }
+        return parsed;
       }
-      return parsed;
+    } catch {
+      // Fallback
     }
     return DEMO_USERS.manager;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const auth = localStorage.getItem('stockflow_auth');
-    return auth ? JSON.parse(auth) : true;
+    try {
+      const auth = localStorage.getItem('stockflow_auth');
+      return auth ? JSON.parse(auth) : false;
+    } catch {
+      return false;
+    }
   });
 
   const login = (email, password, roleChoice) => {
@@ -70,8 +77,12 @@ export const AuthProvider = ({ children }) => {
 
     setUser(targetUser);
     setIsAuthenticated(true);
-    localStorage.setItem('stockflow_auth', 'true');
-    localStorage.setItem('stockflow_user', JSON.stringify(targetUser));
+    try {
+      localStorage.setItem('stockflow_auth', 'true');
+      localStorage.setItem('stockflow_user', JSON.stringify(targetUser));
+    } catch {
+      // ignore
+    }
     return targetUser;
   };
 
@@ -84,7 +95,11 @@ export const AuthProvider = ({ children }) => {
       roleTitle: targetPreset.roleTitle,
     };
     setUser(updated);
-    localStorage.setItem('stockflow_user', JSON.stringify(updated));
+    try {
+      localStorage.setItem('stockflow_user', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
     return updated;
   };
 
@@ -98,14 +113,22 @@ export const AuthProvider = ({ children }) => {
     };
     setUser(newUser);
     setIsAuthenticated(true);
-    localStorage.setItem('stockflow_auth', 'true');
-    localStorage.setItem('stockflow_user', JSON.stringify(newUser));
+    try {
+      localStorage.setItem('stockflow_auth', 'true');
+      localStorage.setItem('stockflow_user', JSON.stringify(newUser));
+    } catch {
+      // ignore
+    }
     return newUser;
   };
 
   const logout = () => {
     setIsAuthenticated(false);
-    localStorage.setItem('stockflow_auth', 'false');
+    try {
+      localStorage.setItem('stockflow_auth', 'false');
+    } catch {
+      // ignore
+    }
   };
 
   const updateProfile = (updatedFields) => {
@@ -116,8 +139,25 @@ export const AuthProvider = ({ children }) => {
       updated.roleLabel = 'Inventory Manager';
     }
     setUser(updated);
-    localStorage.setItem('stockflow_user', JSON.stringify(updated));
+    try {
+      localStorage.setItem('stockflow_user', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
     return updated;
+  };
+
+  const resetPassword = (email, newPassword) => {
+    if (user && user.email?.toLowerCase() === email?.toLowerCase()) {
+      const updated = { ...user, password: newPassword };
+      setUser(updated);
+      try {
+        localStorage.setItem('stockflow_user', JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+    }
+    return true;
   };
 
   const userRole = user?.userRole || 'manager';
@@ -137,6 +177,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         switchRole,
         updateProfile,
+        resetPassword,
       }}
     >
       {children}

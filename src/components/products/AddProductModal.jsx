@@ -9,7 +9,7 @@ import { PackagePlus } from 'lucide-react';
 const UNITS = ['units', 'kg', 'grams', 'meters', 'cm', 'liters', 'ml', 'rolls', 'sheets', 'packs', 'boxes', 'pallets'];
 
 export const AddProductModal = ({ isOpen, onClose }) => {
-  const { addProduct, categories, warehouses } = useInventory();
+  const { addProduct, categories, warehouses, products } = useInventory();
 
   const defaultWarehouseId = warehouses[0]?.id || 'WH-MAIN';
 
@@ -33,7 +33,11 @@ export const AddProductModal = ({ isOpen, onClose }) => {
   const validate = () => {
     const errs = {};
     if (!formData.name.trim()) errs.name = 'Product name is required';
-    if (!formData.sku.trim()) errs.sku = 'SKU code is required';
+    if (!formData.sku.trim()) {
+      errs.sku = 'SKU code is required';
+    } else if (products.some(p => p.sku?.trim().toLowerCase() === formData.sku.trim().toLowerCase())) {
+      errs.sku = 'SKU code already exists in catalog. Please use a unique SKU.';
+    }
     if (Number(formData.initialStock) < 0) errs.initialStock = 'Stock cannot be negative';
     if (Number(formData.minReorderPoint) < 0) errs.minReorderPoint = 'Min reorder point must be 0 or higher';
     if (Number(formData.costPrice) < 0) errs.costPrice = 'Cost price cannot be negative';
