@@ -50,7 +50,11 @@ export const AlertCard = ({
     if (alert.type === 'Receipt') navigate('/receipts');
     else if (alert.type === 'Delivery') navigate('/deliveries');
     else if (alert.type === 'Adjustment') navigate('/adjustments');
-    else navigate('/products');
+    else if (alert.sku || alert.productName) {
+      navigate(`/products?search=${encodeURIComponent(alert.sku || alert.productName)}`);
+    } else {
+      navigate('/products');
+    }
   };
 
   return (
@@ -81,6 +85,31 @@ export const AlertCard = ({
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
             {alert.message}
           </p>
+
+          {/* Structured Stock Breakdown */}
+          {alert.type === 'Stock' && (alert.currentStock !== undefined || alert.reorderPoint !== undefined) && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-mono font-bold text-xs ${
+                Number(alert.currentStock) <= 0
+                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+              }`}>
+                {alert.currentStock} {alert.unit || 'units'} remaining
+              </span>
+              <span className="text-slate-400 dark:text-slate-600">•</span>
+              <span className="text-slate-600 dark:text-slate-400 font-medium">
+                Reorder point: <strong className="font-mono text-slate-800 dark:text-slate-200">{alert.reorderPoint} {alert.unit || 'units'}</strong>
+              </span>
+              {alert.locations && (
+                <>
+                  <span className="text-slate-400 dark:text-slate-600">•</span>
+                  <span className="text-slate-500 dark:text-slate-400 truncate max-w-[240px]" title={alert.locations}>
+                    📍 {alert.locations}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

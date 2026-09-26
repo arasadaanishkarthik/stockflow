@@ -40,8 +40,20 @@ const DEFAULT_SETTINGS = {
   dailySummaryReport: true
 };
 
+<<<<<<< Updated upstream
 // Unique ID generator that doesn't depend on array length (avoids collision on delete)
 const makeId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+=======
+// Helper: compute product stock status from single source of truth
+export const calculateStockStatus = (totalStock, minReorderPoint) => {
+  const stock = Number(totalStock ?? 0);
+  const reorder = Number(minReorderPoint ?? 0);
+  if (stock <= 0) return 'Out of Stock';
+  if (stock < Math.min(10, reorder / 2)) return 'Critical';
+  if (stock <= reorder) return 'Low Stock';
+  return 'In Stock';
+};
+>>>>>>> Stashed changes
 
 export const InventoryProvider = ({ children }) => {
   const toast = useToast();
@@ -49,7 +61,11 @@ export const InventoryProvider = ({ children }) => {
   // 1. PRODUCTS STATE
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-    return saved ? JSON.parse(saved) : initialProducts;
+    const list = saved ? JSON.parse(saved) : initialProducts;
+    return list.map(p => ({
+      ...p,
+      status: calculateStockStatus(p.totalStock, p.minReorderPoint)
+    }));
   });
 
   // 2. WAREHOUSES STATE
@@ -118,6 +134,7 @@ export const InventoryProvider = ({ children }) => {
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities)); }, [activities]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)); }, [settings]);
 
+<<<<<<< Updated upstream
   // Helper: compute product stock status
   const calculateStockStatus = (totalStock, minReorderPoint) => {
     if (totalStock <= 0) return 'Out of Stock';
@@ -127,6 +144,9 @@ export const InventoryProvider = ({ children }) => {
   };
 
   // Helper: get warehouse name by code
+=======
+  // Helper: get warehouse name by code or ID
+>>>>>>> Stashed changes
   const getWarehouseName = (warehouseId) => {
     // Use a functional lookup to always get the latest warehouses (avoid stale closure)
     const found = warehouses.find(w => w.id === warehouseId || w.code === warehouseId);
@@ -153,6 +173,91 @@ export const InventoryProvider = ({ children }) => {
     setActivities(prev => [newActivity, ...prev]);
     return newActivity;
   };
+
+  // DYNAMIC LOW-STOCK & OUT-OF-STOCK ALERT SYNCHRONIZATION
+  // Automatically keeps alerts in sync with actual inventory levels
+  useEffect(() => {
+    setAlerts(prevAlerts => {
+      // 1. Preserve non-stock alerts (Receipt, Delivery, Adjustment, Info)
+      const nonStockAlerts = prevAlerts.filter(a => a.type !== 'Stock');
+
+      // 2. Derive stock alerts for all products at or below minReorderPoint
+      const stockAlerts = [];
+
+      products.forEach(p => {
+        const stock = Number(p.totalStock ?? 0);
+        const reorder = Number(p.minReorderPoint ?? 0);
+
+        // If stock > reorder threshold, no alert is needed (automatically cleared if restocked)
+        if (stock > reorder) return;
+
+        // Check if an existing stock alert exists to preserve read status and id
+        const existing = prevAlerts.find(
+          a => a.type === 'Stock' && (a.productId === p.id || a.sku === p.sku)
+        );
+
+        let severity = 'Warning';
+        let title = `Low Stock: ${p.name}`;
+        if (stock <= 0) {
+          severity = 'Critical';
+          title = `Out of Stock: ${p.name}`;
+        } else if (stock < Math.min(10, reorder / 2)) {
+          severity = 'Critical';
+          title = `Critical Stock: ${p.name}`;
+        }
+
+        const message = stock <= 0
+          ? `${p.name} has 0 ${p.unit || 'units'} remaining across all warehouses. Reorder threshold is ${reorder} ${p.unit || 'units'}.`
+          : `${p.name} has ${stock} ${p.unit || 'units'} remaining. Reorder point: ${reorder} ${p.unit || 'units'}.`;
+
+        const whLocations = Object.entries(p.stockByWarehouse || {})
+          .filter(([_, qty]) => Number(qty) > 0)
+          .map(([whId, qty]) => `${getWarehouseName(whId)}: ${qty}`)
+          .join(', ');
+
+        stockAlerts.push({
+          id: existing?.id || `ALT-STK-${p.id}`,
+          title,
+          message,
+          severity,
+          type: 'Stock',
+          productId: p.id,
+          productName: p.name,
+          sku: p.sku,
+          currentStock: stock,
+          reorderPoint: reorder,
+          unit: p.unit || 'units',
+          locations: whLocations || 'All facilities depleted',
+          timestamp: existing?.timestamp || 'Just now',
+          date: existing?.date || new Date().toISOString().slice(0, 16).replace('T', ' '),
+          isRead: existing && existing.severity === severity ? existing.isRead : false,
+          actionText: 'View Product'
+        });
+      });
+
+      // Avoid unnecessary state re-renders if alert list is unchanged
+      const currentStockAlerts = prevAlerts.filter(a => a.type === 'Stock');
+      const isIdentical =
+        currentStockAlerts.length === stockAlerts.length &&
+        stockAlerts.every(sa => {
+          const cur = currentStockAlerts.find(c => c.productId === sa.productId);
+          return (
+            cur &&
+            cur.severity === sa.severity &&
+            cur.currentStock === sa.currentStock &&
+            cur.title === sa.title &&
+            cur.message === sa.message &&
+            cur.isRead === sa.isRead
+          );
+        });
+
+      if (isIdentical) {
+        return prevAlerts;
+      }
+
+      return [...stockAlerts, ...nonStockAlerts];
+    });
+  }, [products]);
 
   // -------------------------------------------------------------
   // PRODUCT MANAGEMENT
@@ -213,6 +318,7 @@ export const InventoryProvider = ({ children }) => {
         reference: newProduct.sku,
         from: 'Direct Entry / System Setup',
         to: getWarehouseName(productData.warehouseId || 'WH-MAIN'),
+        warehouse: getWarehouseName(productData.warehouseId || 'WH-MAIN'),
         quantity: totalStock,
         unit: newProduct.unit,
         user: 'Anish (Admin)',
@@ -723,6 +829,7 @@ export const InventoryProvider = ({ children }) => {
       reference: receipt.receiptNumber,
       from: receipt.supplier,
       to: whName,
+      warehouse: whName,
       quantity: Number(item.qty),
       unit: item.unit || 'units',
       user: 'Anish (Validated)',
@@ -853,6 +960,7 @@ export const InventoryProvider = ({ children }) => {
       reference: delivery.deliveryId,
       from: whName,
       to: `${delivery.customer} (Customer)`,
+      warehouse: whName,
       quantity: -Number(item.qty),
       unit: item.unit || 'units',
       user: 'Anish (Dispatched)',
@@ -889,6 +997,8 @@ export const InventoryProvider = ({ children }) => {
     const prod = products.find(p => p.id === transferData.productId || p.sku === transferData.sku);
     const fromWhId = transferData.fromWarehouseId || 'WH-MAIN';
     const toWhId = transferData.toWarehouseId || 'WH-PROD';
+    // Default to Pending — stock moves only on explicit validateTransfer()
+    const status = transferData.status || 'Pending';
 
     if (fromWhId === toWhId) {
       toast.error('Invalid Transfer', 'Source and destination warehouses cannot be the same location.');
@@ -898,6 +1008,7 @@ export const InventoryProvider = ({ children }) => {
     const fromWhName = getWarehouseName(fromWhId);
     const toWhName = getWarehouseName(toWhId);
 
+<<<<<<< Updated upstream
     // Update product stock distribution across warehouses (total stays the same)
     if (prod) {
       setProducts(prev => prev.map(p => {
@@ -921,6 +1032,8 @@ export const InventoryProvider = ({ children }) => {
       }));
     }
 
+=======
+>>>>>>> Stashed changes
     const newTransfer = {
       id: newId,
       transferNumber: newId,
@@ -934,7 +1047,7 @@ export const InventoryProvider = ({ children }) => {
       toWarehouseId: toWhId,
       toWarehouseName: toWhName,
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      status: transferData.status || 'Completed',
+      status,
       carrier: transferData.carrier || 'Internal Shuttle Logistics',
       initiatedBy: 'Anish (Supervisor)',
       notes: transferData.notes || 'Internal stock relocation and replenishment.'
@@ -942,38 +1055,151 @@ export const InventoryProvider = ({ children }) => {
 
     setTransfers(prev => [newTransfer, ...prev]);
 
-    // Ledger Entry
+    toast.info(
+      'Transfer Request Created',
+      `Transfer #${newId} for ${qty} ${newTransfer.unit} of "${newTransfer.productName}" is pending validation.`
+    );
+    return newTransfer;
+  };
+
+  // 5b. VALIDATE TRANSFER -> Moves stock, writes ledger + activity (two-step workflow)
+  const validateTransfer = (transferId) => {
+    const transfer = transfers.find(t => t.id === transferId);
+    if (!transfer) {
+      toast.error('Transfer Not Found', `No transfer record with ID ${transferId} exists.`);
+      return;
+    }
+
+    // Guard: already completed
+    if (transfer.status === 'Completed') {
+      toast.warning(
+        'Already Validated',
+        `Transfer #${transfer.transferNumber} has already been completed. Stock was not changed again.`
+      );
+      return;
+    }
+
+    // Guard: cancelled transfers cannot be validated
+    if (transfer.status === 'Cancelled') {
+      toast.error(
+        'Transfer Cancelled',
+        `Transfer #${transfer.transferNumber} was cancelled and cannot be validated.`
+      );
+      return;
+    }
+
+    const prod = products.find(p => p.id === transfer.productId);
+    const fromWhId = transfer.fromWarehouseId;
+    const toWhId = transfer.toWarehouseId;
+    const qty = Number(transfer.qty);
+    const fromWhName = transfer.fromWarehouseName;
+    const toWhName = transfer.toWarehouseName;
+
+    // Guard: insufficient source stock
+    const availableAtSource = Number(prod?.stockByWarehouse?.[fromWhId] || 0);
+    if (availableAtSource < qty) {
+      toast.error(
+        'Insufficient Source Stock',
+        `Only ${availableAtSource} ${transfer.unit} available at ${fromWhName}. Cannot transfer ${qty} ${transfer.unit}.`
+      );
+      return;
+    }
+
+    // 1. Move stock: source decreases, destination increases, total unchanged
+    if (prod) {
+      setProducts(prev => prev.map(p => {
+        if (p.id === prod.id) {
+          const currentFromStock = Number(p.stockByWarehouse?.[fromWhId] || 0);
+          const currentToStock = Number(p.stockByWarehouse?.[toWhId] || 0);
+          const newStockByWarehouse = {
+            ...p.stockByWarehouse,
+            [fromWhId]: Math.max(0, currentFromStock - qty),
+            [toWhId]: currentToStock + qty
+          };
+          const newTotalStock = Object.values(newStockByWarehouse).reduce((a, b) => Number(a) + Number(b), 0);
+          const newStatus = calculateStockStatus(newTotalStock, p.minReorderPoint);
+          return {
+            ...p,
+            stockByWarehouse: newStockByWarehouse,
+            totalStock: newTotalStock,
+            status: newStatus,
+            lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
+          };
+        }
+        return p;
+      }));
+    }
+
+    // 2. Update transfer status to Completed
+    setTransfers(prev => prev.map(t =>
+      t.id === transferId
+        ? { ...t, status: 'Completed', validatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
+        : t
+    ));
+
+    // 3. Ledger entry
     const newLedgerEntry = {
+<<<<<<< Updated upstream
       id: `LED-${Date.now().toString().slice(-6)}`,
+=======
+      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+>>>>>>> Stashed changes
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      productName: newTransfer.productName,
-      sku: newTransfer.sku,
+      productName: transfer.productName,
+      sku: transfer.sku,
       operation: 'Internal Transfer',
-      reference: newTransfer.transferNumber,
+      reference: transfer.transferNumber,
       from: fromWhName,
       to: toWhName,
+      warehouse: fromWhName,
       quantity: qty,
-      unit: newTransfer.unit,
-      user: 'Anish',
+      unit: transfer.unit,
+      user: 'Anish (Validated)',
       status: 'Completed'
     };
     setLedger(prev => [newLedgerEntry, ...prev]);
 
+<<<<<<< Updated upstream
     // Activity Entry
     addActivity({
       productName: newTransfer.productName,
+=======
+    // 4. Activity entry
+    const newActivity = {
+      id: `ACT-${Date.now().toString().slice(-4)}`,
+      productName: transfer.productName,
+>>>>>>> Stashed changes
       operation: 'Transferred',
       type: 'transfer',
-      quantity: `${qty} ${newTransfer.unit}`,
+      quantity: `${qty} ${transfer.unit}`,
       location: `${fromWhName} → ${toWhName}`,
       status: 'info'
     });
 
     toast.success(
-      '✓ Internal Transfer Executed',
-      `${qty} ${newTransfer.unit} moved from ${fromWhName} to ${toWhName}. Total inventory unchanged.`
+      '✓ Transfer Validated & Executed',
+      `${qty} ${transfer.unit} moved from ${fromWhName} to ${toWhName}. Total inventory unchanged.`
     );
-    return newTransfer;
+  };
+
+  // 5c. CANCEL TRANSFER -> Marks cancelled, no stock changes
+  const cancelTransfer = (transferId) => {
+    const transfer = transfers.find(t => t.id === transferId);
+    if (!transfer) return;
+
+    if (transfer.status === 'Completed') {
+      toast.warning('Cannot Cancel', `Transfer #${transfer.transferNumber} is already completed and cannot be cancelled.`);
+      return;
+    }
+    if (transfer.status === 'Cancelled') {
+      toast.info('Already Cancelled', `Transfer #${transfer.transferNumber} is already cancelled.`);
+      return;
+    }
+
+    setTransfers(prev => prev.map(t =>
+      t.id === transferId ? { ...t, status: 'Cancelled' } : t
+    ));
+    toast.warning('Transfer Cancelled', `Transfer #${transfer.transferNumber} has been cancelled. No stock was moved.`);
   };
 
   // -------------------------------------------------------------
@@ -1047,6 +1273,7 @@ export const InventoryProvider = ({ children }) => {
       reference: newAdjustment.adjustmentNumber,
       from: whName,
       to: `${newAdjustment.reason} (${difference > 0 ? '+' : ''}${difference} ${newAdjustment.unit})`,
+      warehouse: whName,
       quantity: difference,
       unit: newAdjustment.unit,
       user: 'Anish (Auditor)',
@@ -1071,10 +1298,100 @@ export const InventoryProvider = ({ children }) => {
     return newAdjustment;
   };
 
+<<<<<<< Updated upstream
   // -------------------------------------------------------------
   // WAREHOUSE MANAGEMENT
   // -------------------------------------------------------------
 
+=======
+  // 6b. APPROVE PENDING ADJUSTMENT -> applies stock for 'Pending Approval' records
+  const approveAdjustment = (adjustmentId) => {
+    const adjustment = adjustments.find(a => a.id === adjustmentId);
+    if (!adjustment) {
+      toast.error('Not Found', 'Adjustment record not found.');
+      return;
+    }
+    if (adjustment.status === 'Applied') {
+      toast.warning(
+        'Already Applied',
+        `Adjustment #${adjustment.adjustmentNumber} has already been applied. Stock was not changed again.`
+      );
+      return;
+    }
+
+    const prod = products.find(p => p.id === adjustment.productId);
+    const whId = adjustment.warehouseId;
+    const whName = adjustment.warehouseName;
+    const physicalQty = Number(adjustment.physicalQty);
+    const difference = Number(adjustment.difference);
+
+    // Apply stock: set warehouse qty to the physical count
+    if (prod) {
+      setProducts(prev => prev.map(p => {
+        if (p.id === prod.id) {
+          const newStockByWarehouse = { ...p.stockByWarehouse, [whId]: physicalQty };
+          const newTotal = Object.values(newStockByWarehouse).reduce((a, b) => Number(a) + Number(b), 0);
+          const newStatus = calculateStockStatus(newTotal, p.minReorderPoint);
+          return {
+            ...p,
+            stockByWarehouse: newStockByWarehouse,
+            totalStock: newTotal,
+            status: newStatus,
+            lastUpdated: new Date().toISOString().slice(0, 16).replace('T', ' ')
+          };
+        }
+        return p;
+      }));
+    }
+
+    // Mark adjustment as Applied
+    setAdjustments(prev => prev.map(a =>
+      a.id === adjustmentId
+        ? { ...a, status: 'Applied', approvedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
+        : a
+    ));
+
+    // Ledger entry
+    const newLedgerEntry = {
+      id: `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+      date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      productName: adjustment.productName,
+      sku: adjustment.sku,
+      operation: 'Adjustment',
+      reference: adjustment.adjustmentNumber,
+      from: whName,
+      to: `${adjustment.reason} (${difference > 0 ? '+' : ''}${difference} ${adjustment.unit})`,
+      warehouse: whName,
+      quantity: difference,
+      unit: adjustment.unit,
+      user: 'Anish (Approved)',
+      status: 'Completed'
+    };
+    setLedger(prev => [newLedgerEntry, ...prev]);
+
+    // Activity entry
+    const newActivity = {
+      id: `ACT-${Date.now().toString().slice(-4)}`,
+      productName: adjustment.productName,
+      operation: 'Adjusted',
+      type: 'adjustment',
+      quantity: `${difference > 0 ? '+' : ''}${difference} ${adjustment.unit}`,
+      location: whName,
+      timestamp: 'Just now',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      user: 'Anish',
+      status: difference >= 0 ? 'success' : 'neutral'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+
+    toast.success(
+      '✓ Adjustment Approved & Applied',
+      `Stock updated to ${physicalQty} ${adjustment.unit} for "${adjustment.productName}" at ${whName} (${difference > 0 ? '+' : ''}${difference}).`
+    );
+  };
+
+  // 7. WAREHOUSE MANAGEMENT
+>>>>>>> Stashed changes
   const addWarehouse = (whData) => {
     const newId = `WH-${(whData.code || 'LOC').toUpperCase()}`;
     const newWarehouse = {
@@ -1150,10 +1467,17 @@ export const InventoryProvider = ({ children }) => {
     totalProducts: products.length,                                                          // ALL products in catalog
     totalProductsInStock: products.reduce((acc, p) => acc + (p.totalStock > 0 ? 1 : 0), 0), // products WITH stock
     totalUnitsInStock: products.reduce((acc, p) => acc + Number(p.totalStock || 0), 0),
+<<<<<<< Updated upstream
     lowStockCount: products.filter(p => p.status === 'Low Stock' || p.status === 'Critical').length,
     outOfStockCount: products.filter(p => p.status === 'Out of Stock' || p.totalStock <= 0).length,
     pendingReceiptsCount: receipts.filter(r => r.status === 'Waiting' || r.status === 'Ready' || r.status === 'Draft').length,
     pendingDeliveriesCount: deliveries.filter(d => d.status === 'Picking' || d.status === 'Packing' || d.status === 'Draft').length,
+=======
+    lowStockCount: products.filter(p => Number(p.totalStock) > 0 && Number(p.totalStock) <= Number(p.minReorderPoint)).length,
+    outOfStockCount: products.filter(p => Number(p.totalStock) <= 0).length,
+    pendingReceiptsCount: receipts.filter(r => ['Draft', 'Waiting', 'Ready'].includes(r.status)).length,
+    pendingDeliveriesCount: deliveries.filter(d => ['Draft', 'Picking', 'Packing', 'Ready'].includes(d.status)).length,
+>>>>>>> Stashed changes
     internalTransfersCount: transfers.length,
     unreadAlertsCount: alerts.filter(a => !a.isRead).length,
     activeWarehousesCount: warehouses.filter(w => w.status === 'Active').length
@@ -1177,8 +1501,13 @@ export const InventoryProvider = ({ children }) => {
         activities,
         settings,
         kpiMetrics,
+<<<<<<< Updated upstream
 
         // Product CRUD
+=======
+        calculateStockStatus,
+        // Methods
+>>>>>>> Stashed changes
         addProduct,
         importProductsBatch,
         updateProduct,
@@ -1198,9 +1527,15 @@ export const InventoryProvider = ({ children }) => {
         advanceDeliveryStatus,
         validateDelivery,
         createTransfer,
+        validateTransfer,
+        cancelTransfer,
         applyAdjustment,
+<<<<<<< Updated upstream
 
         // Warehouse
+=======
+        approveAdjustment,
+>>>>>>> Stashed changes
         addWarehouse,
 
         // Alerts
